@@ -3,7 +3,12 @@ package com.informationplant.fdmn
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -118,6 +123,7 @@ fun RecordsScreen(app: AppCtl) {
                     FilterPill("Main", f.main) { picker = "main" }
                     FilterPill("Sub-Block", f.sub) { picker = "sub" }
                     FilterPill("Sex", when (f.sex) { "M" -> "Male"; "F" -> "Female"; else -> f.sex }) { picker = "sex" }
+                    FilterPill("Age group", if (f.age.isBlank()) "" else ageLabel(f.age)) { picker = "age" }
                     FilterPill("Relation", f.relation) { picker = "relation" }
                     FilterPill("Majhi", f.majhi) { picker = "majhi" }
                     if (f.active) {
@@ -172,6 +178,9 @@ fun RecordsScreen(app: AppCtl) {
         "sex" -> PickerDialog("Sex", listOf("M", "F"), rs.filters.sex, onDismiss = { picker = null }) { v ->
             rs.filters = rs.filters.copy(sex = v); picker = null
         }
+        "age" -> PickerDialog("Age group (children)", AGE_GROUPS.map { it.second }, ageLabel(rs.filters.age), onDismiss = { picker = null }) { v ->
+            rs.filters = rs.filters.copy(age = AGE_GROUPS.firstOrNull { it.second == v }?.first ?: ""); picker = null
+        }
         "relation" -> PickerDialog("Relation", meta.relations, rs.filters.relation, onDismiss = { picker = null }) { v ->
             rs.filters = rs.filters.copy(relation = v); picker = null
         }
@@ -197,26 +206,29 @@ private fun FilterPill(label: String, value: String, onClick: () -> Unit) {
 
 @Composable
 fun PersonCard(sl: Int, p: Person, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-    ) {
+    val tone = when (p.sex) { "F" -> TonePink; "M" -> ToneBlue; else -> ToneGreen }
+    WaveCard(tone, Modifier.fillMaxWidth(), onClick) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.width(44.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("SL", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(fmt(sl), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Box(
+                Modifier.size(48.dp).shadow(3.dp, RoundedCornerShape(14.dp)).background(tone.brush, RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("SL", fontSize = 9.sp, color = Color.White.copy(alpha = 0.85f))
+                    Text(fmt(sl), fontSize = if (sl > 9999) 11.sp else 14.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                }
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(p.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     Spacer(Modifier.width(6.dp))
                     if (p.relation.isNotBlank()) Tag(p.relation, Accent)
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     listOf(p.sexText, p.ageText, p.dobText).filter { it.isNotBlank() }.joinToString(" · "),
-                    fontSize = 13.sp, color = if (p.sex == "F") Female else if (p.sex == "M") Male else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium, color = tone.dark,
                 )
                 Text(
                     "FCN ${p.fcn.ifBlank { "—" }} · ${p.blockText.ifBlank { "No block" }}" + (if (p.majhi.isNotBlank()) " · ${p.majhi}" else ""),
@@ -310,7 +322,7 @@ private fun makeFile(ctx: Context, rows: List<Person>, filters: Filters, pdf: Bo
     val dir = Exporter.exportDir(ctx)
     return if (pdf) {
         val f = File(dir, Exporter.fileName("pdf"))
-        Exporter.writePdf(f, rows, filters.describe())
+        Exporter.writePdf(ctx, f, rows, filters.describe())
         ExportResult(f, Exporter.PDF)
     } else {
         val f = File(dir, Exporter.fileName("xlsx"))

@@ -1,6 +1,35 @@
 package com.informationplant.fdmn
 
+import android.app.Activity
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import kotlinx.coroutines.delay
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -12,16 +41,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,6 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
+        enableEdgeToEdge()
         setContent { FdmnTheme { FdmnApp() } }
     }
 }
@@ -194,6 +221,7 @@ fun FdmnApp() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val app = remember { AppCtl(scope, snackbar) }
+    var splash by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         Api.onAuthLost = {
@@ -210,16 +238,34 @@ fun FdmnApp() {
             if (app.user != null) {
                 app.refreshMeta()
                 app.refreshStats()
-                try {
-                    val u = User.from(Api.call("me").getJSONObject("user"))
-                    app.user = u
-                    Prefs.userJson = u.toJson().toString()
-                } catch (_: Exception) { }
             }
+        }
+        delay(1500)
+        splash = false
+        if (app.user != null) {
+            try {
+                val u = User.from(Api.call("me").getJSONObject("user"))
+                app.user = u
+                Prefs.userJson = u.toJson().toString()
+            } catch (_: Exception) { }
         }
     }
 
+    // Dark status-bar icons on white screens, light icons on green/photo screens.
     val user = app.user
+    val lightScreen = splash || user == null
+    val view = LocalView.current
+    SideEffect {
+        val activity = view.context as? Activity
+        if (activity != null) {
+            WindowCompat.getInsetsController(activity.window, view).isAppearanceLightStatusBars = lightScreen
+        }
+    }
+
+    if (splash) {
+        SplashScreen()
+        return
+    }
     if (user == null) {
         AuthFlow(app)
         return
@@ -232,30 +278,21 @@ fun FdmnApp() {
         snackbarHost = { SnackbarHost(snackbar) },
         contentWindowInsets = WindowInsets(0),
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                val colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Brand, selectedTextColor = Brand,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                )
-                NavigationBarItem(
-                    selected = root == Screen.Home, onClick = { app.tab(Screen.Home) },
-                    icon = { Icon(Icons.Filled.Home, null) }, label = { Text("Home") }, colors = colors,
-                )
-                NavigationBarItem(
-                    selected = root == Screen.Records, onClick = { app.tab(Screen.Records) },
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, null) }, label = { Text("Records") }, colors = colors,
-                )
-                val msgCount = if (app.isAdmin) app.stats.openMessages else app.stats.unreadReplies
-                NavigationBarItem(
-                    selected = root == Screen.Messages, onClick = { app.tab(Screen.Messages) },
-                    icon = { BadgeIcon(msgCount) { Icon(Icons.Filled.Email, null) } },
-                    label = { Text("Messages") }, colors = colors,
-                )
-                NavigationBarItem(
-                    selected = root == Screen.More, onClick = { app.tab(Screen.More) },
-                    icon = { BadgeIcon(if (app.isAdmin) app.stats.pendingUsers else 0) { Icon(Icons.Filled.Menu, null) } },
-                    label = { Text("More") }, colors = colors,
-                )
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 12.dp,
+                shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val msgCount = if (app.isAdmin) app.stats.openMessages else app.stats.unreadReplies
+                    NavPill(root == Screen.Home, Icons.Filled.Home, "Home", 0, Modifier.weight(1f)) { app.tab(Screen.Home) }
+                    NavPill(root == Screen.Records, Icons.AutoMirrored.Filled.List, "Records", 0, Modifier.weight(1f)) { app.tab(Screen.Records) }
+                    NavPill(root == Screen.Messages, Icons.Outlined.Email, "Messages", msgCount, Modifier.weight(1f)) { app.tab(Screen.Messages) }
+                    NavPill(root == Screen.More, Icons.Filled.Menu, "More", if (app.isAdmin) app.stats.pendingUsers else 0, Modifier.weight(1f)) { app.tab(Screen.More) }
+                }
             }
         },
     ) { pad ->
@@ -277,10 +314,49 @@ fun FdmnApp() {
 }
 
 @Composable
-fun BadgeIcon(count: Int, icon: @Composable () -> Unit) {
-    if (count > 0) {
-        BadgedBox(badge = { Badge(containerColor = Color(0xFFD32F2F)) { Text(if (count > 99) "99+" else count.toString()) } }) { icon() }
-    } else {
-        icon()
+private fun NavPill(selected: Boolean, icon: ImageVector, label: String, badge: Int, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Box(
+        modifier
+            .then(if (selected) Modifier.shadow(6.dp, shape) else Modifier)
+            .clip(shape)
+            .then(if (selected) Modifier.background(Brush.verticalGradient(listOf(Color(0xFF138A6E), BrandDark)), shape) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box {
+                Icon(icon, label, tint = if (selected) Color.White else BrandDark, modifier = Modifier.size(28.dp))
+                if (badge > 0) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-4).dp)
+                            .size(if (badge > 9) 20.dp else 16.dp).background(Color(0xFFE53935), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(if (badge > 99) "99+" else badge.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+            Text(
+                label, fontSize = 13.sp, maxLines = 1,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (selected) Color.White else BrandDark,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SplashScreen() {
+    Box(Modifier.fillMaxSize().background(Color.White), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+            Image(
+                painterResource(R.drawable.logo_full), contentDescription = "Office of the Camp-in-Charge, Camp-8 West",
+                modifier = Modifier.fillMaxWidth(0.92f),
+            )
+            Spacer(Modifier.height(28.dp))
+            Text("8 West FDMN Database", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Brand)
+            Spacer(Modifier.height(18.dp))
+            CircularProgressIndicator(color = Brand, strokeWidth = 3.dp, modifier = Modifier.size(28.dp))
+        }
     }
 }

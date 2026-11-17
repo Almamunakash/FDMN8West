@@ -95,9 +95,18 @@ function act_stats() {
     $r = db()->query("SELECT COUNT(*) AS total, COUNT(DISTINCT NULLIF(fcn, '')) AS families,
         SUM(CASE WHEN sex = 'M' THEN 1 ELSE 0 END) AS male,
         SUM(CASE WHEN sex = 'F' THEN 1 ELSE 0 END) AS female FROM beneficiaries")->fetch();
+    $b = age_bounds();
+    $st = db()->prepare("SELECT
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS u5,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS c6,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS c13
+        FROM beneficiaries WHERE dob IS NOT NULL");
+    $st->execute([$b['y6'], $b['today'], $b['y13'], $b['y6'], $b['y18'], $b['y13']]);
+    $a = $st->fetch();
     $res = [
         'total' => (int)$r['total'], 'families' => (int)$r['families'],
         'male' => (int)$r['male'], 'female' => (int)$r['female'],
+        'under5' => (int)$a['u5'], 'age6to12' => (int)$a['c6'], 'age13to17' => (int)$a['c13'],
         'pending_users' => 0, 'open_messages' => 0, 'unread_replies' => 0,
     ];
     if ($u['role'] === 'admin') {
@@ -148,8 +157,32 @@ function act_options() {
     out(['relations' => array_values($rel), 'majhis' => array_values($maj)]);
 }
 
+/** Birth-date limits for the child age groups (age in full years). */
+function age_bounds() {
+    $t = new DateTime('today');
+    $d = function ($years) use ($t) { $x = clone $t; $x->modify("-$years years"); return $x->format('Y-m-d'); };
+    return ['today' => $t->format('Y-m-d'), 'y6' => $d(6), 'y13' => $d(13), 'y18' => $d(18)];
+}
+
+function age_condition($group, &$args) {
+    $b = age_bounds();
+    switch ($group) {
+        case 'u5':  $args[] = $b['y6'];  $args[] = $b['today']; return "(dob > ? AND dob <= ?)";
+        case 'c6':  $args[] = $b['y13']; $args[] = $b['y6'];    return "(dob > ? AND dob <= ?)";
+        case 'c13': $args[] = $b['y18']; $args[] = $b['y13'];   return "(dob > ? AND dob <= ?)";
+        case 'child': $args[] = $b['y18']; $args[] = $b['today']; return "(dob > ? AND dob <= ?)";
+        case 'adult': $args[] = $b['y18']; return "(dob <= ?)";
+    }
+    return '';
+}
+
 function list_where(&$args) {
     $w = [];
+    $age = s('age', 10);
+    if ($age !== '') {
+        $c = age_condition($age, $args);
+        if ($c !== '') $w[] = $c;
+    }
     $q = s('q', 100);
     if ($q !== '') {
         $w[] = "(name LIKE ? OR fcn LIKE ? OR majhi LIKE ?)";

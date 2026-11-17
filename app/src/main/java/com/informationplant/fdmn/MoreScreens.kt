@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -68,8 +69,8 @@ fun MoreScreen(app: AppCtl) {
     var confirmOut by remember { mutableStateOf(false) }
     var about by remember { mutableStateOf(false) }
     Scaffold(topBar = { BrandTopBar("More") }, contentWindowInsets = WindowInsets(0)) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
+        Column(Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            WaveCard(ToneGreen, Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(52.dp)) {
                         Box(contentAlignment = Alignment.Center) {
@@ -121,12 +122,12 @@ fun MoreScreen(app: AppCtl) {
 }
 
 object BuildConfigInfo {
-    const val version = "1.0"
+    const val version = "1.1"
 }
 
 @Composable
 private fun MenuGroup(content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp) {
         Column { content() }
     }
 }
@@ -137,8 +138,8 @@ private fun MenuItem(icon: ImageVector, text: String, badge: Int = 0, color: Col
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = if (color == Color.Unspecified) Brand else color)
-        Spacer(Modifier.width(16.dp))
+        IconTile(icon, if (color == Color.Unspecified) ToneGreen else ToneRed, 38.dp, 22.dp)
+        Spacer(Modifier.width(14.dp))
         Text(text, Modifier.weight(1f), color = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurface else color, fontWeight = FontWeight.Medium)
         if (badge > 0) {
             Tag("$badge new", Color(0xFFD32F2F))
@@ -317,7 +318,7 @@ fun ChangePasswordScreen(app: AppCtl) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     Scaffold(topBar = { BrandTopBar("Change password", onBack = { app.back() }) }, contentWindowInsets = WindowInsets(0)) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(old, { old = it }, label = { Text("Current password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
             OutlinedTextField(new1, { new1 = it }, label = { Text("New password (min 6)") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
             OutlinedTextField(new2, { new2 = it }, label = { Text("Confirm new password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())

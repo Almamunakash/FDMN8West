@@ -1,6 +1,14 @@
 package com.informationplant.fdmn
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,28 +97,111 @@ fun FdmnTheme(content: @Composable () -> Unit) {
 
 @Composable
 fun BrandTopBar(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
-    TopAppBar(
-        title = {
-            Column {
-                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                if (!subtitle.isNullOrBlank()) {
-                    Text(subtitle, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.8f))
+    Box(Modifier.background(Brush.horizontalGradient(listOf(BrandDark, Brand, Color(0xFF138A6E))))) {
+        TopAppBar(
+            title = {
+                Column {
+                    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(subtitle, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.85f))
+                    }
                 }
-            }
-        },
-        navigationIcon = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-            }
-        },
-        actions = { actions() },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Brand,
-            titleContentColor = Color.White,
-            navigationIconContentColor = Color.White,
-            actionIconContentColor = Color.White,
-        ),
-    )
+            },
+            navigationIcon = {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                }
+            },
+            actions = { actions() },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = Color.White,
+                navigationIconContentColor = Color.White,
+                actionIconContentColor = Color.White,
+            ),
+        )
+    }
+}
+
+// ---------- colourful card helpers ----------
+
+/** Two-tone colours used for icons, tiles and blocks. */
+data class Tone(val light: Color, val dark: Color) {
+    val brush get() = Brush.linearGradient(listOf(light, dark))
+}
+
+val ToneGreen = Tone(Color(0xFF22B573), Color(0xFF0B7A45))
+val ToneBlue = Tone(Color(0xFF3D8BFD), Color(0xFF1456C8))
+val TonePurple = Tone(Color(0xFFA66CFF), Color(0xFF6D28D9))
+val ToneOrange = Tone(Color(0xFFFFB547), Color(0xFFF07C12))
+val TonePink = Tone(Color(0xFFFF5C9A), Color(0xFFC2185B))
+val ToneTeal = Tone(Color(0xFF2DD4BF), Color(0xFF0F766E))
+val ToneRed = Tone(Color(0xFFFF7A6B), Color(0xFFD32F2F))
+val ToneIndigo = Tone(Color(0xFF7C8CFF), Color(0xFF3949AB))
+
+val BlockTones = listOf(ToneGreen, ToneBlue, TonePurple, ToneOrange, TonePink, ToneTeal, ToneRed, ToneIndigo)
+fun blockTone(index: Int) = BlockTones[((index % BlockTones.size) + BlockTones.size) % BlockTones.size]
+
+/** Soft double wave in the bottom-right corner of a card. */
+fun Modifier.cornerWave(color: Color): Modifier = drawBehind {
+    val w = size.width
+    val h = size.height
+    val back = Path().apply {
+        moveTo(w * 0.42f, h)
+        cubicTo(w * 0.68f, h * 1.0f, w * 0.78f, h * 0.55f, w, h * 0.42f)
+        lineTo(w, h); close()
+    }
+    drawPath(back, Brush.horizontalGradient(listOf(color.copy(alpha = 0f), color.copy(alpha = 0.22f)), startX = w * 0.42f, endX = w))
+    val front = Path().apply {
+        moveTo(w * 0.58f, h)
+        cubicTo(w * 0.8f, h, w * 0.88f, h * 0.76f, w, h * 0.66f)
+        lineTo(w, h); close()
+    }
+    drawPath(front, Brush.horizontalGradient(listOf(color.copy(alpha = 0f), color.copy(alpha = 0.55f)), startX = w * 0.58f, endX = w))
+}
+
+@Composable
+fun IconTile(icon: ImageVector, tone: Tone, size: Dp = 52.dp, iconSize: Dp = 28.dp) {
+    Box(
+        Modifier.size(size).shadow(4.dp, RoundedCornerShape(16.dp)).background(tone.brush, RoundedCornerShape(16.dp)),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(iconSize)) }
+}
+
+@Composable
+fun LetterTile(letter: String, tone: Tone, size: Dp = 52.dp) {
+    Box(
+        Modifier.size(size).shadow(4.dp, RoundedCornerShape(16.dp)).background(tone.brush, RoundedCornerShape(16.dp)),
+        contentAlignment = Alignment.Center,
+    ) { Text(letter, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 1) }
+}
+
+/** White card with a light tint and a wave in the corner. */
+@Composable
+fun WaveCard(tone: Tone, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp,
+        modifier = modifier.then(if (onClick != null) Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick) else Modifier),
+    ) {
+        Box(
+            Modifier
+                .background(Brush.linearGradient(listOf(Color.White, tone.light.copy(alpha = 0.10f))))
+                .cornerWave(tone.light)
+        ) { content() }
+    }
+}
+
+@Composable
+fun SectionTitle(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+        Icon(icon, null, tint = Brand, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BrandDark)
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.weight(1f).height(1.5.dp).background(Brand.copy(alpha = 0.6f)))
+    }
 }
 
 @Composable
@@ -273,7 +364,7 @@ fun SegmentChoice(options: List<Pair<String, String>>, selected: String, onSelec
 }
 
 @Composable
-fun StatCard(label: String, value: String, color: Color, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+fun OldStatCard(label: String, value: String, color: Color, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,

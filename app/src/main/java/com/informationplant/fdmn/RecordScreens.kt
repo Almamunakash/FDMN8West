@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.FamilyRestroom
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -87,15 +89,13 @@ fun DetailScreen(app: AppCtl, id: Int) {
             p == null && error != null -> ErrorBox(error ?: "") { reload++ }
             p == null -> Loading(Modifier.padding(pad))
             else -> Column(
-                Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
+                Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
+                WaveCard(if (p.sex == "F") TonePink else if (p.sex == "M") ToneBlue else ToneGreen, Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = RoundedCornerShape(50), color = (if (p.sex == "F") Female else Male).copy(alpha = 0.12f)) {
-                                Icon(Icons.Filled.Person, null, tint = if (p.sex == "F") Female else Male, modifier = Modifier.padding(10.dp))
-                            }
+                            IconTile(Icons.Filled.Person, if (p.sex == "F") TonePink else if (p.sex == "M") ToneBlue else ToneGreen)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(p.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -204,12 +204,17 @@ fun FamilyScreen(app: AppCtl, fcn: String) {
                     val m = list.count { it.sex == "M" }
                     val f = list.count { it.sex == "F" }
                     val children = list.count { (DateUtil.parseIso(it.dob)?.let { d -> java.time.Period.between(d, LocalDate.now()).years } ?: 99) < 18 }
-                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    WaveCard(ToneOrange, Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                            Text("FCN $fcn", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconTile(Icons.Filled.FamilyRestroom, ToneOrange)
+                                Spacer(Modifier.width(12.dp))
+                                Text("FCN $fcn", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = ToneOrange.dark)
+                            }
+                            Spacer(Modifier.height(6.dp))
                             Text(
                                 listOf(head.blockText, head.majhi.let { if (it.isBlank()) "" else "Majhi $it" }).filter { it.isNotBlank() }.joinToString(" · "),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(Modifier.height(10.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -279,7 +284,7 @@ fun EditScreen(app: AppCtl, start: Person) {
         contentWindowInsets = WindowInsets(0),
     ) { pad ->
         Column(
-            Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedTextField(name, { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())

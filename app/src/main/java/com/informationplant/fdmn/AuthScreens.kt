@@ -1,6 +1,10 @@
 package com.informationplant.fdmn
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -33,7 +36,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -45,30 +47,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
+val LightBlue = Color(0xFFE6F1FD)
+val LightBlueBorder = Color(0xFFBBD7F5)
+
 @Composable
 fun AuthFlow(app: AppCtl) {
     var register by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-    Box(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Brand, BrandDark)))
-    ) {
+    Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
                 .verticalScroll(rememberScrollState()).padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(28.dp))
-            Surface(shape = CircleShape, color = Color.White, modifier = Modifier.size(84.dp)) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("8W", fontSize = 32.sp, fontWeight = FontWeight.Black, color = Brand)
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            Text("8 West FDMN Database", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            Text("Camp-8W · Beneficiary records", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-            Spacer(Modifier.height(24.dp))
-            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(20.dp))
+            Image(
+                painterResource(R.drawable.logo_full), contentDescription = "Office of the Camp-in-Charge, Camp-8 West",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(18.dp))
+            Text("8 West FDMN Database", color = Brand, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text("Beneficiary records", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            Spacer(Modifier.height(22.dp))
+            Surface(
+                shape = RoundedCornerShape(24.dp), color = LightBlue,
+                border = BorderStroke(1.dp, LightBlueBorder), shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Column(Modifier.padding(20.dp)) {
                     if (register) {
                         RegisterForm(
@@ -83,11 +88,19 @@ fun AuthFlow(app: AppCtl) {
             Spacer(Modifier.height(16.dp))
             Text(
                 "Forgot your password? Ask an Admin to reset it.",
-                color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp, textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center,
             )
         }
     }
 }
+
+@Composable
+private fun fieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = Color.White,
+    unfocusedContainerColor = Color.White,
+    unfocusedBorderColor = LightBlueBorder,
+    focusedBorderColor = Brand,
+)
 
 @Composable
 private fun LoginForm(app: AppCtl, notice: String?, onRegister: () -> Unit) {
@@ -125,6 +138,7 @@ private fun LoginForm(app: AppCtl, notice: String?, onRegister: () -> Unit) {
     OutlinedTextField(
         value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+        colors = fieldColors(),
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(10.dp))
@@ -133,6 +147,7 @@ private fun LoginForm(app: AppCtl, notice: String?, onRegister: () -> Unit) {
         visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
         trailingIcon = { TextButton(onClick = { show = !show }) { Text(if (show) "Hide" else "Show") } },
+        colors = fieldColors(),
         modifier = Modifier.fillMaxWidth(),
     )
     if (error != null) {
@@ -188,20 +203,20 @@ private fun RegisterForm(onDone: (String) -> Unit, onLogin: () -> Unit) {
     Text("An Admin must approve your account before you can sign in.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(12.dp))
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(name, { name = it }, label = { Text("Full name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(name, { name = it }, label = { Text("Full name") }, singleLine = true, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
             email, { email = it }, label = { Text("Email") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), colors = fieldColors(), modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             pass, { pass = it }, label = { Text("Password (min 6)") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), colors = fieldColors(), modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             pass2, { pass2 = it }, label = { Text("Confirm password") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), colors = fieldColors(), modifier = Modifier.fillMaxWidth(),
         )
     }
     if (error != null) {

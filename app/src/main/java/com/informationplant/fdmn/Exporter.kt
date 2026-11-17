@@ -2,7 +2,9 @@ package com.informationplant.fdmn
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
@@ -103,14 +105,14 @@ object Exporter {
 
     // ---------------- PDF ----------------
 
-    fun writePdf(file: File, rows: List<Person>, subtitle: String) {
+    fun writePdf(ctx: Context, file: File, rows: List<Person>, subtitle: String) {
         val pageW = 842 // A4 landscape, in points
         val pageH = 595
         val margin = 28f
         val widths = floatArrayOf(34f, 150f, 30f, 60f, 70f, 52f, 46f, 52f, 120f, 0f)
         widths[9] = (pageW - margin * 2) - widths.sum()
         val rowH = 16f
-        val titleH = 46f
+        val titleH = 66f
         val footerH = 20f
         val firstRows = ((pageH - margin * 2 - titleH - footerH - rowH) / rowH).toInt()
         val otherRows = ((pageH - margin * 2 - footerH - rowH) / rowH).toInt()
@@ -131,6 +133,7 @@ object Exporter {
             return s.substring(0, end) + "…"
         }
 
+        val logo = try { BitmapFactory.decodeResource(ctx.resources, R.drawable.logo_full) } catch (e: Exception) { null }
         val doc = PdfDocument()
         try {
             var index = 0
@@ -140,8 +143,16 @@ object Exporter {
                 val c = page.canvas
                 var y = margin
                 if (pageNo == 1) {
-                    c.drawText("8 West FDMN Database — Beneficiary list", margin, y + 14f, title)
-                    c.drawText("$subtitle   ·   ${fmt(rows.size)} records   ·   Exported $stamp", margin, y + 32f, small)
+                    var tx = margin
+                    if (logo != null) {
+                        val lh = 52f
+                        val lw = lh * logo.width / logo.height
+                        c.drawBitmap(logo, null, RectF(margin, y, margin + lw, y + lh), Paint(Paint.FILTER_BITMAP_FLAG))
+                        tx = margin + lw + 16f
+                    }
+                    c.drawText("8 West FDMN Database — Beneficiary list", tx, y + 20f, title)
+                    c.drawText("$subtitle", tx, y + 36f, small)
+                    c.drawText("${fmt(rows.size)} records   ·   Exported $stamp", tx, y + 50f, small)
                     y += titleH
                 }
                 // header row

@@ -72,11 +72,13 @@ data class MainBlock(val name: String, val count: Int, val families: Int, val su
 data class Stats(
     val total: Int = 0, val families: Int = 0, val male: Int = 0, val female: Int = 0,
     val pendingUsers: Int = 0, val openMessages: Int = 0, val unreadReplies: Int = 0,
+    val under5: Int = 0, val age6to12: Int = 0, val age13to17: Int = 0,
 ) {
     companion object {
         fun from(o: JSONObject) = Stats(
             o.optInt("total"), o.optInt("families"), o.optInt("male"), o.optInt("female"),
             o.optInt("pending_users"), o.optInt("open_messages"), o.optInt("unread_replies"),
+            o.optInt("under5"), o.optInt("age6to12"), o.optInt("age13to17"),
         )
     }
 }
@@ -115,11 +117,12 @@ data class Filters(
     val sex: String = "",
     val relation: String = "",
     val majhi: String = "",
+    val age: String = "",
 ) {
-    val active get() = q.isNotBlank() || main.isNotBlank() || sub.isNotBlank() || sex.isNotBlank() || relation.isNotBlank() || majhi.isNotBlank()
+    val active get() = q.isNotBlank() || main.isNotBlank() || sub.isNotBlank() || sex.isNotBlank() || relation.isNotBlank() || majhi.isNotBlank() || age.isNotBlank()
 
     fun toJson(): JSONObject = jo(
-        "q" to q, "main" to main, "sub" to sub, "sex" to sex, "relation" to relation, "majhi" to majhi,
+        "q" to q, "main" to main, "sub" to sub, "sex" to sex, "relation" to relation, "majhi" to majhi, "age" to age,
     )
 
     fun describe(): String {
@@ -128,11 +131,15 @@ data class Filters(
         if (sub.isNotBlank()) parts += "Sub-Block $sub"
         if (sex.isNotBlank()) parts += if (sex == "M") "Male" else if (sex == "F") "Female" else sex
         if (relation.isNotBlank()) parts += "Relation $relation"
+        if (age.isNotBlank()) parts += "Children " + ageLabel(age)
         if (majhi.isNotBlank()) parts += "Majhi $majhi"
         if (q.isNotBlank()) parts += "Search \"$q\""
         return if (parts.isEmpty()) "All records" else parts.joinToString(" · ")
     }
 }
+
+val AGE_GROUPS = listOf("u5" to "0–5 yrs", "c6" to "6–12 yrs", "c13" to "13–17 yrs")
+fun ageLabel(code: String): String = AGE_GROUPS.firstOrNull { it.first == code }?.second ?: code
 
 fun fmt(n: Int): String = String.format(Locale.US, "%,d", n)
 
