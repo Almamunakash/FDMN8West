@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
@@ -129,7 +129,7 @@ private fun AlertCard(text: String, onClick: () -> Unit) {
             Icon(Icons.Filled.Warning, null, tint = Accent)
             Spacer(Modifier.width(12.dp))
             Text(text, Modifier.weight(1f), fontWeight = FontWeight.Medium)
-            Icon(Icons.Filled.KeyboardArrowRight, null)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
         }
     }
 }
@@ -181,6 +181,6 @@ private fun SubRow(title: String, count: Int, families: Int, onClick: () -> Unit
             Text(title, fontWeight = FontWeight.Medium)
             Text("${fmt(count)} people · ${fmt(families)} families", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
