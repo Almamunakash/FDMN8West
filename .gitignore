@@ -1,0 +1,7 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+backend/fdmn-api/config.php
