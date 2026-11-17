@@ -122,7 +122,7 @@ fun MoreScreen(app: AppCtl) {
 }
 
 object BuildConfigInfo {
-    const val version = "1.1"
+    const val version = "1.2"
 }
 
 @Composable

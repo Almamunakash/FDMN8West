@@ -87,6 +87,7 @@ sealed class Screen {
     object Users : Screen()
     object Import : Screen()
     object ChangePassword : Screen()
+    object CampProfile : Screen()
 }
 
 /** Keeps the record list, its filters and scroll position while moving between screens. */
@@ -147,6 +148,8 @@ class AppCtl(val scope: CoroutineScope, val snackbar: SnackbarHostState) {
     var version by mutableIntStateOf(0)
     var meta by mutableStateOf(Meta())
     var stats by mutableStateOf(Stats())
+    /** Floating welcome card: shown every time the app opens and after signing in. */
+    var showWelcome by mutableStateOf(true)
     val records = RecordsState()
 
     val current: Screen get() = stack.last()
@@ -201,6 +204,7 @@ class AppCtl(val scope: CoroutineScope, val snackbar: SnackbarHostState) {
         records.items.clear()
         records.loadedKey = null
         tab(Screen.Home)
+        showWelcome = true
         refreshMeta()
         refreshStats()
     }
@@ -308,9 +312,11 @@ fun FdmnApp() {
                 Screen.Users -> UsersScreen(app)
                 Screen.Import -> ImportScreen(app)
                 Screen.ChangePassword -> ChangePasswordScreen(app)
+                Screen.CampProfile -> CampProfileScreen(app)
             }
         }
     }
+    if (app.showWelcome) WelcomePopup(user) { app.showWelcome = false }
 }
 
 @Composable

@@ -4,7 +4,14 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Elderly
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,7 +40,6 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Man
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -88,7 +94,7 @@ fun HomeScreen(app: AppCtl) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { Header(onRefresh = { app.refreshStats(); app.refreshMeta() }) }
-        item { WelcomeCard(user, Modifier.padding(horizontal = 14.dp)) }
+        item { CampProfileCard(Modifier.padding(horizontal = 14.dp)) { app.push(Screen.CampProfile) } }
         item {
             Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -101,12 +107,17 @@ fun HomeScreen(app: AppCtl) {
                 }
             }
         }
-        item { Box(Modifier.padding(horizontal = 14.dp)) { SectionTitle(Icons.Filled.ChildCare, "Children") } }
+        item { Box(Modifier.padding(horizontal = 14.dp)) { SectionTitle(Icons.Filled.Groups, "Age groups") } }
         item {
-            Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ChildCard(Icons.Filled.ChildFriendly, TonePurple, fmt(st.under5), "0–5 yrs", Modifier.weight(1f)) { app.openRecords(Filters(age = "u5")) }
-                ChildCard(Icons.Filled.ChildCare, ToneTeal, fmt(st.age6to12), "6–12 yrs", Modifier.weight(1f)) { app.openRecords(Filters(age = "c6")) }
-                ChildCard(Icons.Filled.EmojiPeople, ToneIndigo, fmt(st.age13to17), "13–17 yrs", Modifier.weight(1f)) { app.openRecords(Filters(age = "c13")) }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                val w = Modifier.width(118.dp)
+                ChildCard(Icons.Filled.ChildFriendly, TonePurple, fmt(st.under5), "0–5 yrs", w) { app.openRecords(Filters(age = "u5")) }
+                ChildCard(Icons.Filled.ChildCare, ToneTeal, fmt(st.age6to12), "6–12 yrs", w) { app.openRecords(Filters(age = "c6")) }
+                ChildCard(Icons.Filled.EmojiPeople, ToneIndigo, fmt(st.age13to17), "13–17 yrs", w) { app.openRecords(Filters(age = "c13")) }
+                ChildCard(Icons.Filled.Elderly, ToneRed, fmt(st.elderly), "Elderly 60+", w) { app.openRecords(Filters(age = "e60")) }
             }
         }
         if (user.isAdmin && st.pendingUsers > 0) {
@@ -135,7 +146,7 @@ fun HomeScreen(app: AppCtl) {
 
 @Composable
 private fun Header(onRefresh: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(300.dp).clip(HeaderWave)) {
+    Box(Modifier.fillMaxWidth().height(270.dp).clip(HeaderWave)) {
         Image(
             painterResource(R.drawable.header_bg), contentDescription = null,
             contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
@@ -143,22 +154,14 @@ private fun Header(onRefresh: () -> Unit) {
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.55f),
-                    0.45f to Color.Black.copy(alpha = 0.15f),
+                    0f to Color.Black.copy(alpha = 0.40f),
+                    0.35f to Color.Black.copy(alpha = 0.08f),
                     1f to Color.Transparent,
                 )
             )
         )
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 6.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("8 West FDMN Database", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.LocationOn, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Camp-8W · Ukhiya", color = Color.White.copy(alpha = 0.92f), fontSize = 14.sp)
-                    }
-                }
+            Row(Modifier.fillMaxWidth().padding(end = 6.dp, top = 2.dp), horizontalArrangement = Arrangement.End) {
                 IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, "Refresh", tint = Color.White, modifier = Modifier.size(28.dp)) }
             }
             Box(Modifier.fillMaxWidth().weight(1f).padding(bottom = 34.dp), contentAlignment = Alignment.Center) {
@@ -179,7 +182,7 @@ private fun Header(onRefresh: () -> Unit) {
 }
 
 @Composable
-private fun WelcomeCard(user: User, modifier: Modifier) {
+fun WelcomeCard(user: User, modifier: Modifier) {
     Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 6.dp, color = Color.Transparent, modifier = modifier.fillMaxWidth()) {
         Box(
             Modifier
@@ -334,5 +337,68 @@ private fun SubRow(title: String, count: Int, families: Int, tone: Tone, onClick
             Text("${fmt(count)} people · ${fmt(families)} families", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = tone.dark)
+    }
+}
+
+@Composable
+private fun CampProfileCard(modifier: Modifier, onClick: () -> Unit) {
+    val blue = Color(0xFF3354BD)
+    Surface(
+        shape = RoundedCornerShape(22.dp), shadowElevation = 6.dp, color = Color.Transparent,
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).clickable(onClick = onClick),
+    ) {
+        Box(
+            Modifier
+                .background(Brush.linearGradient(listOf(Color(0xFF2A47A8), blue, Color(0xFF4F74E0))))
+                .drawBehind {
+                    val w = size.width
+                    val h = size.height
+                    val p = Path().apply {
+                        moveTo(w * 0.35f, h); cubicTo(w * 0.6f, h * 0.95f, w * 0.75f, h * 0.55f, w, h * 0.35f); lineTo(w, h); close()
+                    }
+                    drawPath(p, Brush.horizontalGradient(listOf(Color(0x008FB0FF), Color(0x998FB0FF)), startX = w * 0.35f, endX = w))
+                }
+                .border(1.5.dp, Color(0xFF8FB0FF).copy(alpha = 0.5f), RoundedCornerShape(22.dp))
+                .padding(horizontal = 16.dp, vertical = 18.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(64.dp).background(Color.White, CircleShape).border(3.dp, Color(0xFFBFD0FF), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(painterResource(R.drawable.emblem), contentDescription = null, modifier = Modifier.size(52.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Box(Modifier.width(1.5.dp).height(56.dp).background(Color.White.copy(alpha = 0.7f)))
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Camp Profile", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text("About the Camp, FDMN and Activities", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White, modifier = Modifier.size(30.dp))
+            }
+        }
+    }
+}
+
+/** Welcome card floating in the middle of the screen; closes after 5 seconds or with the X. */
+@Composable
+fun WelcomePopup(user: User, onClose: () -> Unit) {
+    LaunchedEffect(Unit) {
+        delay(5000)
+        onClose()
+    }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+            WelcomeCard(user, Modifier.padding(top = 14.dp, end = 10.dp))
+            Box(
+                Modifier.align(Alignment.TopEnd).size(36.dp).shadow(4.dp, CircleShape)
+                    .background(Color.White, CircleShape).clip(CircleShape).clickable(onClick = onClose),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Close, "Close", tint = BrandDark, modifier = Modifier.size(22.dp))
+            }
+        }
     }
 }

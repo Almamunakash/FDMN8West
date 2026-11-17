@@ -178,7 +178,7 @@ fun RecordsScreen(app: AppCtl) {
         "sex" -> PickerDialog("Sex", listOf("M", "F"), rs.filters.sex, onDismiss = { picker = null }) { v ->
             rs.filters = rs.filters.copy(sex = v); picker = null
         }
-        "age" -> PickerDialog("Age group (children)", AGE_GROUPS.map { it.second }, ageLabel(rs.filters.age), onDismiss = { picker = null }) { v ->
+        "age" -> PickerDialog("Age group", AGE_GROUPS.map { it.second }, ageLabel(rs.filters.age), onDismiss = { picker = null }) { v ->
             rs.filters = rs.filters.copy(age = AGE_GROUPS.firstOrNull { it.second == v }?.first ?: ""); picker = null
         }
         "relation" -> PickerDialog("Relation", meta.relations, rs.filters.relation, onDismiss = { picker = null }) { v ->

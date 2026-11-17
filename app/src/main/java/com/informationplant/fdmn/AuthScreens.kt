@@ -37,7 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -66,8 +69,11 @@ fun AuthFlow(app: AppCtl) {
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(18.dp))
-            Text("8 West FDMN Database", color = Brand, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            Text("Beneficiary records", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            Text("Camp- 8 West", color = Brand, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(
+                "About the Camp, FDMN and Activities.", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 15.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(22.dp))
             Surface(
                 shape = RoundedCornerShape(24.dp), color = LightBlue,
@@ -161,7 +167,12 @@ private fun LoginForm(app: AppCtl, notice: String?, onRegister: () -> Unit) {
     }
     Spacer(Modifier.height(8.dp))
     TextButton(onClick = onRegister, modifier = Modifier.fillMaxWidth()) {
-        Text("New user? Create an account")
+        Text(
+            buildAnnotatedString {
+                append("New user? ")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Create an account") }
+            },
+        )
     }
 }
 

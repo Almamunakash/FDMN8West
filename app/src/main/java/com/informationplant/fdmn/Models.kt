@@ -72,13 +72,13 @@ data class MainBlock(val name: String, val count: Int, val families: Int, val su
 data class Stats(
     val total: Int = 0, val families: Int = 0, val male: Int = 0, val female: Int = 0,
     val pendingUsers: Int = 0, val openMessages: Int = 0, val unreadReplies: Int = 0,
-    val under5: Int = 0, val age6to12: Int = 0, val age13to17: Int = 0,
+    val under5: Int = 0, val age6to12: Int = 0, val age13to17: Int = 0, val elderly: Int = 0,
 ) {
     companion object {
         fun from(o: JSONObject) = Stats(
             o.optInt("total"), o.optInt("families"), o.optInt("male"), o.optInt("female"),
             o.optInt("pending_users"), o.optInt("open_messages"), o.optInt("unread_replies"),
-            o.optInt("under5"), o.optInt("age6to12"), o.optInt("age13to17"),
+            o.optInt("under5"), o.optInt("age6to12"), o.optInt("age13to17"), o.optInt("elderly"),
         )
     }
 }
@@ -131,14 +131,14 @@ data class Filters(
         if (sub.isNotBlank()) parts += "Sub-Block $sub"
         if (sex.isNotBlank()) parts += if (sex == "M") "Male" else if (sex == "F") "Female" else sex
         if (relation.isNotBlank()) parts += "Relation $relation"
-        if (age.isNotBlank()) parts += "Children " + ageLabel(age)
+        if (age.isNotBlank()) parts += (if (age == "e60") "Elderly " else "Children ") + ageLabel(age)
         if (majhi.isNotBlank()) parts += "Majhi $majhi"
         if (q.isNotBlank()) parts += "Search \"$q\""
         return if (parts.isEmpty()) "All records" else parts.joinToString(" · ")
     }
 }
 
-val AGE_GROUPS = listOf("u5" to "0–5 yrs", "c6" to "6–12 yrs", "c13" to "13–17 yrs")
+val AGE_GROUPS = listOf("u5" to "0–5 yrs", "c6" to "6–12 yrs", "c13" to "13–17 yrs", "e60" to "60+ yrs")
 fun ageLabel(code: String): String = AGE_GROUPS.firstOrNull { it.first == code }?.second ?: code
 
 fun fmt(n: Int): String = String.format(Locale.US, "%,d", n)

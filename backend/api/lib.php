@@ -2,7 +2,7 @@
 // 8 West FDMN Database - shared helpers. Not opened directly.
 if (!defined('FDMN')) { http_response_code(403); exit('Forbidden'); }
 
-const API_VERSION = '1.1';
+const API_VERSION = '1.2';
 date_default_timezone_set('Asia/Dhaka');
 
 if (!function_exists('mb_substr')) {
