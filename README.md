@@ -1,19 +1,19 @@
 # 8 West FDMN Database
 
-Android app for Camp-8W beneficiary records (Main Block → Sub-Block → families by FCN), with a PHP + MySQL backend on informationplant.com.
+Android app for Camp-8W beneficiary records (Main Block → Sub-Block → families by FCN), with a PHP + MySQL backend on app.informationplant.com.
 
 ## Parts
 
 - `app/` — Android app (Kotlin, Jetpack Compose). GitHub Actions builds the APK on every push → artifact **FDMN8West-apk**.
-- `backend/fdmn-api/` — PHP API + one-time installer. Goes in `public_html/fdmn-api/` on the hosting.
+- `backend/` — goes in the root folder of app.informationplant.com: `index.php` (landing page) and `api/` (PHP API + one-time installer).
 
 ## Server setup (once, in cPanel)
 
 1. **MySQL Databases** → create a database (e.g. `fdmn`) and a user with a strong password → *Add User To Database* → tick **ALL PRIVILEGES**.
-2. **File Manager** → open `public_html` (the folder of informationplant.com) → upload `fdmn-api.zip` → right-click → **Extract**. You get `public_html/fdmn-api/`.
-3. Open `https://informationplant.com/fdmn-api/install.php`, enter the database name, user and password from step 1, and choose the first Admin's name, email and password → **Set up now**.
-4. Delete `install.php` from `public_html/fdmn-api/` (it is locked after setup anyway).
-5. Check: `https://informationplant.com/fdmn-api/index.php?a=ping` should show `"ok":true`.
+2. **File Manager** → open the folder of app.informationplant.com → upload `fdmn-server.zip` → right-click → **Extract**. You get `index.php` and the `api/` folder.
+3. Open `https://app.informationplant.com/api/install.php`, enter the database name, user and password from step 1, and choose the first Admin's name, email and password → **Set up now**.
+4. Delete `install.php` from the `api/` folder (it is locked after setup anyway).
+5. Check: `https://app.informationplant.com/api/index.php?a=ping` should show `"ok":true`.
 
 ## Roles
 

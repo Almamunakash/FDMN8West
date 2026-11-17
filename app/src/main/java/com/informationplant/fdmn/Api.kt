@@ -14,7 +14,7 @@ class ApiException(message: String, val code: String) : Exception(message)
 
 object Api {
     /** Address of the PHP API on the hosting. */
-    const val BASE = "https://informationplant.com/fdmn-api/index.php"
+    const val BASE = "https://app.informationplant.com/api/index.php"
 
     @Volatile var token: String = ""
     var onAuthLost: (() -> Unit)? = null
@@ -28,7 +28,10 @@ object Api {
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             conn.setRequestProperty("Accept", "application/json")
-            if (token.isNotEmpty()) conn.setRequestProperty("X-Auth-Token", token)
+            if (token.isNotEmpty()) {
+                conn.setRequestProperty("X-Auth-Token", token)
+                if (!body.has("token")) body.put("token", token)
+            }
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream

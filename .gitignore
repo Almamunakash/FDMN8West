@@ -4,4 +4,4 @@ app/build/
 local.properties
 *.iml
 .idea/
-backend/fdmn-api/config.php
+backend/api/config.php

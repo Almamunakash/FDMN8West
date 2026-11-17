@@ -112,7 +112,7 @@ fun MoreScreen(app: AppCtl) {
             text = {
                 Text(
                     "Version ${BuildConfigInfo.version}\n\nBeneficiary records for Camp-8W, organised by Main Block and Sub-Block.\n\n" +
-                        "Data is stored securely on informationplant.com and is only visible to approved users.",
+                        "Data is stored securely on app.informationplant.com and is only visible to approved users.",
                 )
             },
             confirmButton = { TextButton(onClick = { about = false }) { Text("OK") } },

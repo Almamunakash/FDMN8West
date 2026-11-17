@@ -1,6 +1,6 @@
 Options -Indexes
 
-<FilesMatch "^(config|lib)\.php$|\.(sqlite|db|log)$">
+<FilesMatch "^(config|lib)\.php$|\.(sqlite|db|log|ini)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

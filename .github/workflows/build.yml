@@ -17,7 +17,7 @@ jobs:
         with:
           gradle-version: '8.7'
       - name: Check PHP files
-        run: for f in backend/fdmn-api/*.php; do php -l "$f"; done
+        run: for f in backend/*.php backend/api/*.php; do php -l "$f"; done
       - name: Build APK
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Rename APK
@@ -28,6 +28,6 @@ jobs:
           path: app/build/outputs/apk/debug/FDMN8West.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: fdmn-api-server-files
-          path: backend/fdmn-api/
+          name: server-files
+          path: backend/
           include-hidden-files: true
