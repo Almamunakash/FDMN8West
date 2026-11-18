@@ -2,7 +2,7 @@
 // 8 West FDMN Database - shared helpers. Not opened directly.
 if (!defined('FDMN')) { http_response_code(403); exit('Forbidden'); }
 
-const API_VERSION = '1.2';
+const API_VERSION = '1.3';
 date_default_timezone_set('Asia/Dhaka');
 
 if (!function_exists('mb_substr')) {
@@ -46,6 +46,7 @@ function schema_sql($driver) {
             "CREATE TABLE IF NOT EXISTS blocks (id INTEGER PRIMARY KEY AUTOINCREMENT, main_block TEXT NOT NULL, sub_block TEXT NOT NULL, UNIQUE(main_block, sub_block))",
             "CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, beneficiary_id INTEGER NULL, subject TEXT NOT NULL DEFAULT '', body TEXT NOT NULL, reply TEXT NULL, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL, replied_at TEXT NULL, replied_by INTEGER NULL, user_seen INTEGER NOT NULL DEFAULT 1)",
             "CREATE INDEX IF NOT EXISTS idx_m_user ON messages(user_id)",
+            "CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
         ];
     }
     $e = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
@@ -109,6 +110,10 @@ function schema_sql($driver) {
             user_seen TINYINT NOT NULL DEFAULT 1,
             KEY idx_m_user (user_id),
             KEY idx_m_status (status)
+        )$e",
+        "CREATE TABLE IF NOT EXISTS settings (
+            k VARCHAR(50) NOT NULL PRIMARY KEY,
+            v MEDIUMTEXT NOT NULL
         )$e",
     ];
 }

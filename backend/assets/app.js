@@ -2,8 +2,8 @@
 'use strict';
 
 const API_URL = 'api/index.php';
-const APP_VERSION = '1.0';
-const AGE_GROUPS = [['u5', '0–5 yrs'], ['c6', '6–12 yrs'], ['c13', '13–17 yrs'], ['e60', '60+ yrs']];
+const APP_VERSION = '2.0';
+const AGE_GROUPS = [['u5', '0–5 yrs'], ['c6', '6–12 yrs'], ['c13', '13–17 yrs'], ['a18', '18–59 yrs'], ['e60', '60+ yrs']];
 const BLOCK_TONES = ['green', 'blue', 'purple', 'orange', 'pink', 'teal', 'red', 'indigo'];
 
 // ---------------- small helpers ----------------
@@ -31,6 +31,7 @@ const S = {
   openBlocks: new Set(),
   rec: { filters: {}, items: [], total: 0, loading: false, error: null, key: null, gen: 0, scroll: 0 },
   preset: null,
+  settings: null,
   lastRoute: '',
 };
 const isAdmin = () => S.user && S.user.role === 'admin';
@@ -69,6 +70,9 @@ async function loadMeta() {
     S.meta = { blocks: b.blocks || [], relations: o.relations || [], majhis: o.majhis || [] };
   } catch (e) { /* keep old */ }
 }
+async function loadSettings() {
+  try { S.settings = (await api('settings_get')).settings; } catch (e) { /* keep old */ }
+}
 function changed() { S.version++; loadMeta(); loadStats(); }
 const mainNames = () => S.meta.blocks.map((b) => b.name).filter(Boolean);
 const subNames = (main) => [...new Set((main ? S.meta.blocks.filter((b) => b.name === main) : S.meta.blocks).flatMap((b) => b.subs.map((s) => s.name)).filter(Boolean))];
@@ -78,7 +82,7 @@ function describe(f) {
   if (f.main) p.push('Main Block ' + f.main);
   if (f.sub) p.push('Sub-Block ' + f.sub);
   if (f.sex) p.push(sexText(f.sex));
-  if (f.age) p.push((f.age === 'e60' ? 'Elderly ' : 'Children ') + ageLabel(f.age));
+  if (f.age) p.push(f.age === 'e60' ? 'Elderly 60+' : f.age === 'a18' ? 'Adults 18–59' : 'Children ' + ageLabel(f.age));
   if (f.relation) p.push('Relation ' + f.relation);
   if (f.majhi) p.push('Majhi ' + f.majhi);
   if (f.q) p.push(`Search "${f.q}"`);
@@ -113,7 +117,7 @@ function confirmBox(title, text, ok = 'Yes', danger = false) {
 }
 function topbar(title, sub, opts = {}) {
   return `<header class="topbar">
-    ${opts.back ? `<button class="iconbtn" data-back title="Back">${ic('ArrowBack')}</button>` : ''}
+    ${opts.back ? `<button class="iconbtn" data-back title="Back">${ic('ArrowBack')}</button>` : `<button class="iconbtn menubtn" data-menu-open title="Menu">${ic('Menu')}</button>`}
     <div class="titles"><h1>${esc(title)}</h1>${sub != null ? `<div class="sub" id="topSub">${esc(sub)}</div>` : ''}</div>
     ${opts.actions || ''}
   </header>`;
@@ -141,7 +145,7 @@ function busyBtn(btn, busy, text) {
 }
 
 // ---------------- routing ----------------
-const ROOT = { home: 'home', camp: 'home', records: 'records', record: 'records', family: 'records', edit: 'records', new: 'records', messages: 'messages', more: 'more', users: 'more', import: 'more', password: 'more' };
+const ROOT = { home: 'home', camp: 'camp', records: 'records', record: 'records', family: 'records', edit: 'records', new: 'records', reports: 'reports', messages: 'messages', users: 'users', settings: 'settings', more: 'settings', import: 'settings', password: 'settings' };
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const i = h.indexOf('/');
@@ -161,39 +165,125 @@ function render() {
   const main = $('#main');
   main.innerHTML = '';
   window.scrollTo(0, 0);
-  const pages = { home: pageHome, camp: pageCamp, records: pageRecords, record: pageDetail, family: pageFamily, edit: pageEdit, new: pageEdit, messages: pageMessages, more: pageMore, users: pageUsers, import: pageImport, password: pagePassword };
+  closeDrawer();
+  closePopover();
+  const pages = { home: pageHome, camp: pageCamp, records: pageRecords, record: pageDetail, family: pageFamily, edit: pageEdit, new: pageEdit, reports: pageReports, messages: pageMessages, users: pageUsers, settings: pageSettings, more: pageSettings, import: pageImport, password: pagePassword };
   S.lastRoute = r.name;
   (pages[r.name] || pageHome)(main, r.arg);
 }
 
-// ---------------- shell (side menu on PC, bottom menu on phone) ----------------
-const NAV = [['home', 'Home', 'Home'], ['records', 'Records', 'List'], ['messages', 'Messages', 'MailOutline'], ['more', 'More', 'Menu']];
+// ---------------- shell (side menu on PC, drawer on phone) ----------------
+const NAV = [['home', 'Dashboard', 'Dashboard'], ['camp', 'Camp Profile', 'AccountBox'], ['records', 'Records', 'Storage'], ['reports', 'Reports', 'BarChart'], ['messages', 'Messages', 'MailOutline'], ['users', 'Users', 'PeopleOutline', true], ['settings', 'Settings', 'Settings']];
 function ensureShell() {
   if ($('#main')) return;
-  const navBtns = NAV.map(([k, label, icon]) => `<button class="navbtn" data-nav="${k}">${ic(icon)}<span>${label}</span><i class="badge hidden" data-badge="${k}"></i></button>`).join('');
   $('#app').innerHTML = `
-    <aside class="sidebar">
-      <img class="logo" src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West">
-      <div class="appname">Camp- 8 West</div>
-      ${navBtns}
-      <div class="who" id="who"></div>
+    <div class="scrim" id="scrim"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="em"><img src="assets/emblem.png" alt="Government of Bangladesh emblem"></div>
+        <div class="rrrc">RRRC</div>
+        <div class="gov">Government of the<br>People's Republic of Bangladesh</div>
+        <hr>
+        <div class="office">Office of the<br>Camp-in-Charge</div>
+        <div class="camp">Camp-8 West</div>
+        <div class="loc">Ukhiya, Cox's Bazar</div>
+        <hr>
+      </div>
+      <div class="menu-items" id="menuItems"></div>
+      <div class="who-space"></div>
+      <div class="who" id="who" title="Settings"></div>
     </aside>
-    <main class="main" id="main"></main>
-    <nav class="bottomnav">${navBtns}</nav>`;
-  $$('[data-nav]').forEach((b) => { b.onclick = () => go(b.dataset.nav); });
-  $('#main').addEventListener('click', (e) => { if (e.target.closest('[data-back]')) back(ROOT[route().name]); });
-}
-function updateNav(active) {
-  if (active) $$('[data-nav]').forEach((b) => b.classList.toggle('on', b.dataset.nav === active));
-  const st = S.stats || {};
-  const counts = { messages: isAdmin() ? st.open_messages : st.unread_replies, more: isAdmin() ? st.pending_users : 0 };
-  $$('[data-badge]').forEach((b) => {
-    const n = counts[b.dataset.badge] || 0;
-    b.textContent = n > 99 ? '99+' : n;
-    b.classList.toggle('hidden', !n);
+    <main class="main" id="main"></main>`;
+  $('#scrim').onclick = closeDrawer;
+  $('#who').onclick = () => go('settings');
+  $('#main').addEventListener('click', (e) => {
+    if (e.target.closest('[data-back]')) back(ROOT[route().name]);
+    else if (e.target.closest('[data-menu-open]')) openDrawer();
   });
+}
+function openDrawer() { const sb = $('#sidebar'); if (sb) { sb.classList.add('open'); $('#scrim').classList.add('open'); } }
+function closeDrawer() { const sb = $('#sidebar'); if (sb) { sb.classList.remove('open'); $('#scrim').classList.remove('open'); } }
+function updateNav(active) {
+  const box = $('#menuItems');
+  if (!box) return;
+  const st = S.stats || {};
+  const counts = { messages: isAdmin() ? st.open_messages : st.unread_replies, users: isAdmin() ? st.pending_users : 0 };
+  const cur = active || (box.querySelector('.on') || {}).dataset?.nav;
+  box.innerHTML = NAV.filter((n) => !n[3] || isAdmin()).map(([k, label, icon]) => {
+    const n = counts[k] || 0;
+    return `<button class="navbtn ${k === cur ? 'on' : ''}" data-nav="${k}">${ic(icon)}<span>${label}</span>${n ? `<i class="badge">${n > 99 ? '99+' : n}</i>` : ''}</button>`;
+  }).join('');
+  $$('[data-nav]', box).forEach((b) => { b.onclick = () => { closeDrawer(); go(b.dataset.nav); }; });
   const who = $('#who');
-  if (who && S.user) who.innerHTML = `<b>${esc(S.user.name)}</b>${isAdmin() ? '👑 Admin' : 'Viewer'} · ${esc(S.user.email)}`;
+  if (who && S.user) who.innerHTML = `${ic('AccountCircle')}<div style="min-width:0"><b>${esc(S.user.name)}</b><small>${isAdmin() ? 'Admin' : 'Viewer'}</small><small>${esc(S.user.email)}</small></div>`;
+  const bell = $('#bellDot');
+  if (bell) { const n = bellCount(); bell.textContent = n > 99 ? '99+' : n; bell.classList.toggle('hidden', !n); }
+}
+function bellCount() {
+  const st = S.stats || {};
+  return isAdmin() ? (st.pending_users || 0) + (st.open_messages || 0) : (st.unread_replies || 0);
+}
+
+// ---------------- popovers: notifications and calendar ----------------
+function closePopover() { $$('.popover').forEach((p) => p.remove()); }
+function openPopover(anchor, html, onMount) {
+  closePopover();
+  const p = document.createElement('div');
+  p.className = 'popover';
+  p.innerHTML = html;
+  document.body.appendChild(p);
+  const r = anchor.getBoundingClientRect();
+  const w = p.offsetWidth;
+  p.style.top = (r.bottom + 8) + 'px';
+  p.style.left = Math.max(10, Math.min(window.innerWidth - w - 10, r.right - w)) + 'px';
+  if (onMount) onMount(p);
+  setTimeout(() => {
+    const off = (e) => { if (!p.contains(e.target) && !anchor.contains(e.target)) { p.remove(); document.removeEventListener('click', off, true); } };
+    document.addEventListener('click', off, true);
+  }, 0);
+  return p;
+}
+async function openBell(anchor) {
+  const p = openPopover(anchor, `<h4>Notifications</h4><div class="none">Loading…</div>`);
+  const items = [];
+  try {
+    if (isAdmin()) {
+      const [u, m] = await Promise.all([api('users'), api('msg_all', { status: 'open' })]);
+      (u.users || []).filter((x) => x.status === 'pending').forEach((x) => items.push({ icon: 'PeopleOutline', t: `${x.name} wants to join`, s: `${x.email} · waiting for approval`, go: 'users' }));
+      (m.messages || []).forEach((x) => items.push({ icon: 'MailOutline', t: x.subject || 'Request', s: `${x.user_name} · ${x.created_at}`, go: 'messages' }));
+    } else {
+      const m = await api('msg_mine');
+      (m.messages || []).filter((x) => !x.user_seen && x.reply).forEach((x) => items.push({ icon: 'MailOutline', t: 'Admin replied: ' + (x.subject || 'Request'), s: x.reply.slice(0, 80), go: 'messages' }));
+      loadStats();
+    }
+  } catch (e) { items.length = 0; }
+  if (!document.body.contains(p)) return;
+  p.innerHTML = `<h4>Notifications</h4>` + (items.length ? items.map((x, i) => `<div class="item" data-i="${i}">${ic(x.icon)}<div><b>${esc(x.t)}</b><small>${esc(x.s)}</small></div></div>`).join('') : '<div class="none">No new notifications.</div>');
+  $$('[data-i]', p).forEach((el) => { el.onclick = () => { p.remove(); go(items[+el.dataset.i].go); }; });
+}
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function openCalendar(anchor) {
+  const today = new Date();
+  let y = today.getFullYear(), m = today.getMonth();
+  const draw = (p) => {
+    const first = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < first; i++) cells += '<td></td>';
+    for (let d = 1; d <= days; d++) {
+      const wd = (first + d - 1) % 7;
+      const isToday = d === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+      cells += `<td class="${isToday ? 'today' : ''} ${wd === 5 ? 'fri' : ''}"><span>${d}</span></td>`;
+      if (wd === 6 && d < days) cells += '</tr><tr>';
+    }
+    p.innerHTML = `<div class="cal"><div class="head"><button data-m="-1" aria-label="Previous month">${ic('ChevronLeft')}</button><b>${MONTHS_LONG[m]} ${y}</b><button data-m="1" aria-label="Next month">${ic('ChevronRight')}</button></div>
+      <table><thead><tr>${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<th>${d}</th>`).join('')}</tr></thead><tbody><tr>${cells}</tr></tbody></table>
+      <button class="btn outline small todaybtn" data-today>Today: ${today.getDate()} ${MONTHS_LONG[today.getMonth()]} ${today.getFullYear()}</button></div>`;
+    $$('[data-m]', p).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); m += +b.dataset.m; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } draw(p); }; });
+    $('[data-today]', p).onclick = (e) => { e.stopPropagation(); y = today.getFullYear(); m = today.getMonth(); draw(p); };
+  };
+  openPopover(anchor, '', draw);
 }
 
 // ---------------- sign in / register ----------------
@@ -266,6 +356,7 @@ function signedIn(token, user) {
   if (location.hash && location.hash !== '#/' && location.hash !== '#/home') go('home'); else render();
   loadMeta().then(() => { if (route().name === 'home') render(); });
   loadStats().then(() => { if (route().name === 'home') render(); });
+  loadSettings().then(() => { if (route().name === 'home') render(); });
   showWelcome();
 }
 function signOut(callServer = true) {
@@ -297,66 +388,194 @@ function showWelcome() {
   setTimeout(close, 5000);
 }
 
-// ---------------- HOME ----------------
+// ---------------- DASHBOARD ----------------
+const AGE_COLORS = { u5: '#A855F7', c6: '#2196F3', c13: '#22C4C4', a18: '#FFB020', e60: '#EC4899' };
+function donut(parts, total) {
+  const r = 70, c = 2 * Math.PI * r;
+  let off = 0;
+  const segs = parts.filter((x) => x.v > 0).map((x) => {
+    const len = total ? (x.v / total) * c : 0;
+    const seg = `<circle r="${r}" cx="95" cy="95" fill="none" stroke="${x.color}" stroke-width="36" stroke-dasharray="${len} ${c - len}" stroke-dashoffset="${-off}"/>`;
+    off += len;
+    return seg;
+  }).join('');
+  return `<svg viewBox="0 0 190 190"><circle r="${r}" cx="95" cy="95" fill="none" stroke="#EEF3F1" stroke-width="36"/>${segs}<circle r="52" cx="95" cy="95" fill="#fff"/></svg>`;
+}
+const CONTACT_ICON = { fire: 'FireTruck', police: 'LocalPolice', hospital: 'LocalHospital', site: 'Engineering', other: 'Phone' };
+function campInfoHtml(ci) {
+  const tile = (tone, icon, label, val) => `<div class="info t-${tone}">${ic(icon)}<div><small>${label}</small><b>${esc(val || '—')}</b></div></div>`;
+  return `<div class="infogrid">
+    ${tile('green', 'Terrain', 'Camp Area', ci.area)}${tile('blue', 'Groups', 'Total Organisations', ci.organisations)}
+    ${tile('blue', 'Public', 'UN Agencies', ci.un_agencies)}${tile('purple', 'Handshake', "NGO's & INGO's", ci.ngos)}
+    ${tile('pink', 'Settings', 'Total Projects', ci.projects)}${tile('teal', 'Layers', 'Total Sectors', ci.sectors)}</div>`;
+}
+function contactsHtml(list) {
+  if (!list || !list.length) return '<p class="muted">No contacts yet.</p>';
+  return list.map((c) => `<div class="contact"><div class="cic ${esc(c.type)}">${ic(CONTACT_ICON[c.type] || 'Phone')}</div>
+    <div class="t"><b>${esc(c.name)}</b><span>${esc(c.phone)}</span></div>
+    ${c.phone ? `<a class="callbtn" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}" title="Call ${esc(c.name)}">${ic('Phone')}</a>` : ''}</div>`).join('');
+}
+
 function pageHome(main) {
   const st = S.stats || {};
-  const stat = (tone, icon, val, label, link) => `<div class="wcard stat t-${tone} ${link ? 'click' : ''}" ${link ? `data-link='${esc(JSON.stringify(link))}'` : ''}>${wave()}<div class="in"><div class="tile">${ic(icon)}</div><div><div class="val">${fmt(val)}</div><div class="lbl">${label}</div></div></div></div>`;
-  const age = (tone, icon, val, label, code) => `<div class="wcard agecard click t-${tone}" data-link='${esc(JSON.stringify({ age: code }))}'>${wave()}<div class="in"><div class="tile sm">${ic(icon)}</div><div class="val">${fmt(val)}</div><div class="lbl">${label}</div></div></div>`;
-  const alerts = [];
-  if (isAdmin() && st.pending_users > 0) alerts.push([`${st.pending_users} new user(s) waiting for your approval`, 'users']);
-  if (isAdmin() && st.open_messages > 0) alerts.push([`${st.open_messages} open message request(s)`, 'messages']);
-  if (!isAdmin() && st.unread_replies > 0) alerts.push([`The Admin replied to ${st.unread_replies} of your request(s)`, 'messages']);
-  const blocks = S.meta.blocks.map((mb, i) => {
-    const tone = BLOCK_TONES[i % BLOCK_TONES.length];
-    const open = S.openBlocks.has(mb.name);
-    const subs = open ? `<div class="subs">
-        <div class="subrow" data-link='${esc(JSON.stringify({ main: mb.name }))}'><i class="dot"></i><div class="grow"><b>All of Main Block ${esc(mb.name)}</b><small>${fmt(mb.count)} people · ${fmt(mb.families)} families</small></div>${ic('KeyboardArrowRight')}</div>
-        ${mb.subs.map((sb) => `<div class="subrow" data-link='${esc(JSON.stringify({ main: mb.name, sub: sb.name }))}'><i class="dot"></i><div class="grow"><b>Sub-Block ${esc(sb.name || '(none)')}</b><small>${fmt(sb.count)} people · ${fmt(sb.families)} families</small></div>${ic('KeyboardArrowRight')}</div>`).join('')}
-      </div>` : '';
-    return `<div class="wcard block t-${tone}">${wave()}<div class="in">
-      <div class="head" data-toggle="${esc(mb.name)}">
-        <div class="tile">${esc((mb.name || '?').slice(0, 2))}</div><div class="vline"></div>
-        <div class="info"><b>Main Block ${esc(mb.name || '(none)')}</b>
-          <div class="mini"><span>${ic('Groups')} ${fmt(mb.count)} people</span><span>·</span><span>${ic('FamilyRestroom')} ${fmt(mb.families)} families</span></div>
-          <div class="mini" style="margin-top:3px"><span>${ic('Layers')} ${mb.subs.length} sub-blocks</span></div></div>
-        <div class="chev">${ic(open ? 'KeyboardArrowUp' : 'KeyboardArrowDown')}</div>
-      </div>${subs}</div></div>`;
-  }).join('');
+  const tot = st.total || 0;
+  const pct = (n) => (tot ? ((n / tot) * 100).toFixed(1) + '%' : '0%');
+  const today = new Date();
+  const ages = [
+    { k: 'u5', label: '0 – 5 yrs', v: st.under5 || 0 }, { k: 'c6', label: '6 – 12 yrs', v: st.age6to12 || 0 },
+    { k: 'c13', label: '13 – 17 yrs', v: st.age13to17 || 0 }, { k: 'a18', label: '18 – 59 yrs', v: st.age18to59 || 0 },
+    { k: 'e60', label: 'Elderly 60+', v: st.elderly || 0 },
+  ].map((x) => Object.assign(x, { color: AGE_COLORS[x.k] }));
+  const ageTotal = ages.reduce((a, x) => a + x.v, 0);
+  const sum = (tone, icon, deco, val, label, sub, link) => `<div class="sum t-${tone}" data-link='${esc(JSON.stringify(link))}'>
+    <div class="tile">${ic(icon)}</div><div><div class="val">${fmt(val)}</div><div class="lbl">${label}${sub ? `<br><span style="font-weight:500">${sub}</span>` : ''}</div></div>${ic(deco, 'deco')}</div>`;
+  const ci = (S.settings && S.settings.camp_info) || {};
+  const contacts = (S.settings && S.settings.contacts) || [];
+  const blocks = S.meta.blocks.map((mb, i) => `<div class="bcard t-${BLOCK_TONES[i % BLOCK_TONES.length]}" data-link='${esc(JSON.stringify({ main: mb.name }))}'>
+      <div class="tile">${esc((mb.name || '?').slice(0, 2))}</div>
+      <div><b class="t">Main Block ${esc(mb.name || '(none)')}</b>
+        <div class="ln">${ic('Groups')} ${fmt(mb.count)} people</div>
+        <div class="ln">${ic('FamilyRestroom')} ${fmt(mb.families)} families</div>
+        <div class="ln">${ic('Layers')} ${mb.subs.length} sub-blocks</div></div>
+      ${ic('Terrain', 'deco')}</div>`).join('');
 
-  main.innerHTML = `
-    <div class="hero"><button class="iconbtn refresh" data-refresh title="Refresh">${ic('Refresh')}</button>
-      <div class="logocard"><img src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West"></div></div>
-    <div class="page pad" style="padding-top:2px">
-      <div class="bigcard campcard" data-camp>${bigWave('8FB0FF')}
-        <div class="em"><img src="assets/emblem.png" alt=""></div><div class="vline"></div>
-        <div style="flex:1;min-width:0"><h3>Camp Profile</h3><p>About the Camp, FDMN and Activities</p></div>
-        ${ic('KeyboardArrowRight')}
-      </div>
-      <div class="stats">
-        ${stat('green', 'Groups', st.total, 'People', {})}
-        ${stat('orange', 'FamilyRestroom', st.families, 'Families', null)}
-        ${stat('blue', 'Man', st.male, 'Male', { sex: 'M' })}
-        ${stat('pink', 'Woman', st.female, 'Female', { sex: 'F' })}
-      </div>
-      <div class="section-title">${ic('Groups')}<h2>Age groups</h2><i class="line"></i></div>
-      <div class="hscroll">
-        ${age('purple', 'ChildFriendly', st.under5, '0–5 yrs', 'u5')}
-        ${age('teal', 'ChildCare', st.age6to12, '6–12 yrs', 'c6')}
-        ${age('indigo', 'EmojiPeople', st.age13to17, '13–17 yrs', 'c13')}
-        ${age('red', 'Elderly', st.elderly, 'Elderly 60+', 'e60')}
-      </div>
-      ${alerts.map(([t, l]) => `<div class="alert" data-go="${l}">${ic('Warning')}<span class="grow">${esc(t)}</span>${ic('KeyboardArrowRight')}</div>`).join('')}
-      <div class="section-title">${ic('Layers')}<h2>Blocks</h2><i class="line"></i></div>
-      <div class="blocks">${blocks || emptyBox('No records yet', isAdmin() ? 'Go to More → Import from Excel to upload your beneficiary list.' : 'The Admin has not added any records yet.')}</div>
-    </div>`;
-
-  $('[data-camp]', main).onclick = () => go('camp');
-  $('[data-refresh]', main).onclick = async () => { toast('Refreshing…'); await Promise.all([loadStats(), loadMeta()]); if (route().name === 'home') render(); };
+  main.innerHTML = `<div class="dash page">
+    <div class="banner">
+      <button class="iconbtn menubtn" data-menu-open title="Menu">${ic('Menu')}</button>
+      <button class="bell" id="bellBtn" title="Notifications">${ic('Notifications')}<i class="dot hidden" id="bellDot"></i></button>
+      <button class="datecard" id="dateBtn" title="Calendar">${ic('CalendarMonth')}<div><b>${today.getDate()} ${MONTHS_LONG[today.getMonth()].slice(0, 3)} ${today.getFullYear()}</b><small>${DAYS[today.getDay()]} ${ic('KeyboardArrowDown')}</small></div></button>
+    </div>
+    <div class="sumcards">
+      ${sum('green', 'Groups', 'Groups', st.total, 'Total Population', '', {})}
+      ${sum('orange', 'FamilyRestroom', 'House', st.families, 'Families', '', {})}
+      ${sum('blue', 'Man', 'Man', st.male, 'Male', '(' + pct(st.male || 0) + ')', { sex: 'M' })}
+      ${sum('pink', 'Woman', 'Woman', st.female, 'Female', '(' + pct(st.female || 0) + ')', { sex: 'F' })}
+    </div>
+    <div class="dgrid">
+      <section class="panel area-info"><div class="ph">${ic('Info')}<h3>Camp Information</h3>${isAdmin() ? `<button class="edit" data-edit-info>${ic('Edit')} Edit</button>` : ''}</div>
+        <div class="pb">${campInfoHtml(ci)}</div></section>
+      <section class="panel area-age"><div class="ph">${ic('People')}<h3>Population by Age Group</h3></div>
+        <div class="pb"><div class="agechart">
+          <div class="donut">${donut(ages, ageTotal)}<div class="mid"><b>${fmt(tot)}</b><span>People</span></div></div>
+          <div class="legend">${ages.map((x) => `<div class="lr" data-link='${esc(JSON.stringify({ age: x.k }))}'><i style="background:${x.color}"></i><span>${x.label}</span><b>${fmt(x.v)}</b><span>(${pct(x.v)})</span></div>`).join('')}
+            ${tot - ageTotal > 0 ? `<div class="lr" data-link='${esc(JSON.stringify({ age: 'nodob' }))}'><i style="background:#B0BEC5"></i><span>No date of birth</span><b>${fmt(tot - ageTotal)}</b><span>(${pct(tot - ageTotal)})</span></div>` : ''}
+          </div></div></div></section>
+      <section class="panel area-key"><div class="ph">${ic('Assignment')}<h3>Key Summary</h3></div>
+        <div class="pb keylist">
+          <div class="kr">${ic('Groups')}<span>Total Population</span><b>${fmt(st.total)}</b></div>
+          <div class="kr">${ic('FamilyRestroom')}<span>Total Families</span><b>${fmt(st.families)}</b></div>
+          <div class="kr">${ic('Layers')}<span>Total Blocks</span><b>${fmt(st.main_blocks)}</b></div>
+          <div class="kr">${ic('GridView')}<span>Total Sub-blocks</span><b>${fmt(st.sub_blocks)}</b></div>
+        </div></section>
+      <section class="panel area-blocks"><div class="ph">${ic('Layers')}<h3>Block-wise Summary</h3></div>
+        <div class="pb">${blocks ? `<div class="bgrid">${blocks}</div>` : emptyBox('No records yet', isAdmin() ? 'Go to Settings → Import from Excel to upload your beneficiary list.' : 'The Admin has not added any records yet.')}</div></section>
+      <section class="panel area-emerg"><div class="ph">${ic('NotificationImportant', 'red')}<h3 class="emerg-title">Emergency Response</h3>${isAdmin() ? `<button class="edit" data-edit-contacts>${ic('Edit')} Edit</button>` : ''}</div>
+        <div class="pb">${contactsHtml(contacts)}</div></section>
+      <section class="panel area-quick"><div class="quick">
+        <div class="qt">${ic('Bolt')} Quick Actions</div>
+        ${isAdmin() ? `<button class="qbtn t-green" data-q="add">${ic('AddCircle')} Add Record</button>` : ''}
+        <button class="qbtn t-blue" data-q="reports">${ic('BarChart')} Reports</button>
+        <button class="qbtn t-purple" data-q="export">${ic('Download')} Export</button>
+        <button class="qbtn t-yellow" data-q="print">${ic('Print')} Print</button>
+      </div></section>
+    </div>
+  </div>`;
+  updateNav();
+  $('#bellBtn').onclick = (e) => openBell(e.currentTarget);
+  $('#dateBtn').onclick = (e) => openCalendar(e.currentTarget);
   $$('[data-link]', main).forEach((el) => { el.onclick = () => openRecords(JSON.parse(el.dataset.link)); });
-  $$('[data-go]', main).forEach((el) => { el.onclick = () => go(el.dataset.go); });
-  $$('[data-toggle]', main).forEach((el) => {
-    el.onclick = () => { const k = el.dataset.toggle; if (S.openBlocks.has(k)) S.openBlocks.delete(k); else S.openBlocks.add(k); const y = window.scrollY; render(); window.scrollTo(0, y); };
+  const ei = $('[data-edit-info]', main); if (ei) ei.onclick = () => editCampInfo();
+  const ec = $('[data-edit-contacts]', main); if (ec) ec.onclick = () => editContacts();
+  $$('[data-q]', main).forEach((b) => {
+    b.onclick = () => {
+      const q = b.dataset.q;
+      if (q === 'add') { S.preset = null; go('new'); }
+      else if (q === 'reports') go('reports');
+      else chooseBlocks(q);
+    };
   });
+}
+
+// choose Main Block / Sub-Block before Export or Print
+function chooseBlocks(kind) {
+  const opts = (list) => list.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  modal(`<h3>${kind === 'print' ? 'Print records' : 'Export records'}</h3>
+    <p class="muted" style="margin-top:0">Choose which records to ${kind === 'print' ? 'print' : 'export'}.</p>
+    <label class="field"><span>Main Block</span><select class="input" id="cbMain"><option value="">All Main Blocks</option>${opts(mainNames())}</select></label>
+    <label class="field"><span>Sub-Block</span><select class="input" id="cbSub"><option value="">All Sub-Blocks</option>${opts(subNames(''))}</select></label>
+    <label class="field"><span>Age group</span><select class="input" id="cbAge"><option value="">All ages</option>${AGE_GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+    <div class="actions"><button class="btn ghost" data-cancel>Cancel</button>
+      ${kind === 'print' ? `<button class="btn" data-go="print">${ic('Print')} Print</button>`
+        : `<button class="btn outline" data-go="pdf">${ic('PictureAsPdf')} PDF</button><button class="btn" data-go="xlsx">${ic('Download')} Excel</button>`}</div>`, (m, close) => {
+    const main = $('#cbMain', m), sub = $('#cbSub', m);
+    main.onchange = () => { sub.innerHTML = `<option value="">All Sub-Blocks</option>${opts(subNames(main.value))}`; };
+    $('[data-cancel]', m).onclick = close;
+    $$('[data-go]', m).forEach((b) => {
+      b.onclick = () => {
+        const f = {};
+        if (main.value) f.main = main.value;
+        if (sub.value) f.sub = sub.value;
+        if ($('#cbAge', m).value) f.age = $('#cbAge', m).value;
+        close();
+        if (b.dataset.go === 'print') printList(f); else if (b.dataset.go === 'pdf') exportPdf(f); else exportExcel(f);
+      };
+    });
+  });
+}
+
+function editCampInfo() {
+  const ci = Object.assign({}, (S.settings && S.settings.camp_info) || {});
+  const f = (k, label) => `<label class="field"><span>${label}</span><input class="input" name="${k}" value="${esc(ci[k] || '')}"></label>`;
+  modal(`<h3>Edit Camp Information</h3><form id="ciForm">
+    <div class="row2">${f('area', 'Camp Area')}${f('organisations', 'Total Organisations')}</div>
+    <div class="row2">${f('un_agencies', 'UN Agencies')}${f('ngos', "NGO's & INGO's")}</div>
+    <div class="row2">${f('projects', 'Total Projects')}${f('sectors', 'Total Sectors')}</div>
+    <div class="err" id="ciErr"></div>
+    <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn" type="submit">${ic('Save')} Save</button></div></form>`, (m, close) => {
+    $('[data-cancel]', m).onclick = close;
+    $('#ciForm', m).onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('button[type=submit]', m);
+      busyBtn(btn, true);
+      try {
+        const r = await api('settings_save', { key: 'camp_info', value: Object.fromEntries(new FormData(e.target)) });
+        S.settings = Object.assign({}, S.settings, { camp_info: r.value });
+        close(); toast('Camp Information saved.'); render();
+      } catch (ex) { $('#ciErr', m).textContent = ex.message; busyBtn(btn, false); }
+    };
+  });
+}
+function contactRow(c) {
+  const types = [['fire', 'Fire'], ['police', 'Police'], ['hospital', 'Hospital'], ['site', 'Site / Office'], ['other', 'Other']];
+  return `<div class="crow"><select class="input" data-k="type">${types.map(([v, l]) => `<option value="${v}" ${c.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <input class="input" data-k="name" placeholder="Name" value="${esc(c.name || '')}"><input class="input" data-k="phone" placeholder="Phone" inputmode="tel" value="${esc(c.phone || '')}">
+    <button type="button" class="iconbtn" style="color:var(--danger)" data-rm title="Remove">${ic('Delete')}</button></div>`;
+}
+function readContacts(box) {
+  return $$('.crow', box).map((r) => ({ type: $('[data-k=type]', r).value, name: $('[data-k=name]', r).value.trim(), phone: $('[data-k=phone]', r).value.trim() })).filter((c) => c.name || c.phone);
+}
+function bindContactEditor(box) {
+  box.onclick = (e) => { const rm = e.target.closest('[data-rm]'); if (rm) rm.closest('.crow').remove(); };
+}
+function editContacts() {
+  const list = (S.settings && S.settings.contacts) || [];
+  modal(`<h3>Edit Emergency Contacts</h3><div id="cEd">${list.map(contactRow).join('')}</div>
+    <button class="btn ghost small" data-addc>${ic('Add')} Add contact</button><div class="err" id="cErr"></div>
+    <div class="actions"><button class="btn ghost" data-cancel>Cancel</button><button class="btn" data-save>${ic('Save')} Save</button></div>`, (m, close) => {
+    const box = $('#cEd', m);
+    bindContactEditor(box);
+    $('[data-addc]', m).onclick = () => box.insertAdjacentHTML('beforeend', contactRow({ type: 'other' }));
+    $('[data-cancel]', m).onclick = close;
+    $('[data-save]', m).onclick = async (e) => {
+      busyBtn(e.currentTarget, true);
+      try {
+        const r = await api('settings_save', { key: 'contacts', value: readContacts(box) });
+        S.settings = Object.assign({}, S.settings, { contacts: r.value });
+        close(); toast('Emergency contacts saved.'); render();
+      } catch (ex) { $('#cErr', m).textContent = ex.message; busyBtn(e.currentTarget, false); }
+    };
+  });
+  const md = $$('.modal').pop(); if (md) md.style.maxWidth = '640px';
 }
 function openRecords(f) {
   S.rec.filters = Object.assign({}, f || {});
@@ -366,15 +585,22 @@ function openRecords(f) {
 
 // ---------------- CAMP PROFILE ----------------
 function pageCamp(main) {
-  main.innerHTML = topbar('Camp Profile', 'About the Camp, FDMN and Activities', { back: true }) + `
-    <div class="page pad narrow" style="margin:0 auto">
-      <img src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West" style="width:100%;max-width:640px;display:block;margin:4px auto 16px">
-      <div class="wcard t-camp">${wave()}<div class="in" style="padding:24px;text-align:center">
+  const ci = (S.settings && S.settings.camp_info) || {};
+  main.innerHTML = topbar('Camp Profile', 'About the Camp, FDMN and Activities') + `
+    <div class="page pad" style="max-width:1100px">
+      <img src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West" style="width:100%;max-width:620px;display:block;margin:4px auto 16px">
+      <div class="settings-grid">
+        <section class="panel"><div class="ph">${ic('Info')}<h3>Camp Information</h3>${isAdmin() ? `<button class="edit" data-edit-info>${ic('Edit')} Edit</button>` : ''}</div><div class="pb">${campInfoHtml(ci)}</div></section>
+        <section class="panel"><div class="ph">${ic('NotificationImportant', 'red')}<h3 class="emerg-title">Emergency Response</h3>${isAdmin() ? `<button class="edit" data-edit-contacts>${ic('Edit')} Edit</button>` : ''}</div><div class="pb">${contactsHtml((S.settings && S.settings.contacts) || [])}</div></section>
+      </div>
+      <div class="wcard t-camp" style="margin-top:14px">${wave()}<div class="in" style="padding:24px;text-align:center">
         <div class="tile" style="margin:0 auto 12px">${ic('Info')}</div>
         <h2 style="margin:0 0 6px;color:var(--camp)">Camp- 8 West</h2>
         <p class="muted" style="margin:0;font-size:16px">Camp information will be added soon.</p>
       </div></div>
     </div>`;
+  const ei = $('[data-edit-info]', main); if (ei) ei.onclick = () => editCampInfo();
+  const ec = $('[data-edit-contacts]', main); if (ec) ec.onclick = () => editContacts();
 }
 
 // ---------------- RECORDS ----------------
@@ -453,13 +679,14 @@ function pageRecords(main) {
   const opt = (v, label, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
   const sel = (key, allLabel, options) => `<select class="input ${f[key] ? 'set' : ''}" data-f="${key}">${opt('', allLabel, f[key] || '')}${options.map(([v, l]) => opt(v, l, f[key] || '')).join('')}</select>`;
   main.innerHTML = topbar('Records', `${fmt(R.total)} found · ${describe(f)}`, {
-    actions: `<button class="iconbtn" data-xlsx title="Export to Excel">${ic('Download')}</button><button class="iconbtn" data-print title="Print / Save as PDF">${ic('Print')}</button>`,
+    actions: `<button class="iconbtn" data-xlsx title="Export to Excel">${ic('Download')}</button><button class="iconbtn" data-print title="Print">${ic('Print')}</button>`,
   }) + `
     <div class="page pad">
       <div class="toolbar">
         <label class="search">${ic('Search')}<input class="input" id="q" type="search" placeholder="Search name, FCN or Majhi" value="${esc(f.q || '')}"></label>
         <button class="btn outline small" data-xlsx>${ic('Download')} Excel</button>
-        <button class="btn outline small" data-print>${ic('Print')} Print / PDF</button>
+        <button class="btn outline small" data-pdf>${ic('PictureAsPdf')} PDF</button>
+        <button class="btn outline small" data-print>${ic('Print')} Print</button>
       </div>
       <div class="filters">
         ${sel('main', 'Main Block: All', mainNames().map((n) => [n, 'Main ' + n]))}
@@ -492,8 +719,9 @@ function pageRecords(main) {
     };
   });
   const cl = $('[data-clear]', main); if (cl) cl.onclick = () => { R.filters = {}; R.key = null; render(); };
-  $$('[data-xlsx]', main).forEach((b) => { b.onclick = () => exportExcel(); });
-  $$('[data-print]', main).forEach((b) => { b.onclick = () => printList(); });
+  $$('[data-xlsx]', main).forEach((b) => { b.onclick = () => exportExcel(R.filters); });
+  $$('[data-pdf]', main).forEach((b) => { b.onclick = () => exportPdf(R.filters); });
+  $$('[data-print]', main).forEach((b) => { b.onclick = () => printList(R.filters); });
   const add = $('[data-add]', main); if (add) add.onclick = () => { S.preset = { main_block: R.filters.main || '', sub_block: R.filters.sub || '' }; go('new'); };
 
   if (R.key !== recKey()) loadRecords(true);
@@ -520,12 +748,19 @@ function progressModal(title) {
 }
 function stamp() { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
 
-async function exportExcel() {
-  const f = Object.assign({}, S.rec.filters);
-  if (!S.rec.total) { toast('Nothing to export.'); return; }
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+async function exportExcel(filters) {
+  const f = Object.assign({}, filters || {});
   const pm = progressModal('Export to Excel');
   try {
     const rows = await fetchAll(f, (n, t) => pm.set(`Downloading records… ${fmt(n)} / ${fmt(t)}`, t ? n / t : null));
+    if (!rows.length) { pm.close(); toast('No records to export.'); return; }
     pm.set('Creating Excel file…', null);
     await new Promise((r) => setTimeout(r, 30));
     const blob = XL.writeXlsx(
@@ -533,39 +768,136 @@ async function exportExcel() {
       rows.map((p, i) => [i + 1, p.name, p.sex, p.fcn, XL.displayDate(p.dob), p.relation, p.main_block, p.sub_block, p.majhi, p.remarks]),
       [7, 28, 6, 11, 14, 10, 11, 11, 22, 30],
     );
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `FDMN_8W_${stamp()}.xlsx`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    downloadBlob(blob, `FDMN_8W_${stamp()}.xlsx`);
     pm.close();
     toast(`Excel file with ${fmt(rows.length)} records downloaded.`);
   } catch (e) { pm.close(); toast(e.message); }
 }
 
-async function printList() {
-  const f = Object.assign({}, S.rec.filters);
-  const total = S.rec.total;
-  if (!total) { toast('Nothing to print.'); return; }
+async function printList(filters) {
+  const f = Object.assign({}, filters || {});
+  let total = 0;
+  try { total = (await api('list', Object.assign({}, f, { per: 1, offset: 0 }))).total; } catch (e) { toast(e.message); return; }
+  if (!total) { toast('No records to print.'); return; }
   if (total > 5000 && !(await confirmBox('Large list', `This list has ${fmt(total)} records (about ${fmt(Math.ceil(total / 38))} pages). Printing may be slow. Continue?`, 'Continue'))) return;
   const pm = progressModal('Print / Save as PDF');
   try {
     const rows = await fetchAll(f, (n, t) => pm.set(`Downloading records… ${fmt(n)} / ${fmt(t)}`, t ? n / t : null));
     pm.set('Preparing pages…', null);
     const now = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-    let pa = $('#printArea');
-    if (!pa) { pa = document.createElement('div'); pa.id = 'printArea'; document.body.appendChild(pa); }
-    pa.innerHTML = `<div class="phead"><img src="assets/logo_full.png" alt=""><div><h2>Camp- 8 West · Beneficiary list</h2><div class="meta">${esc(describe(f))} · ${fmt(rows.length)} records · Printed ${esc(now)}</div></div></div>
+    showPrint(`<div class="phead"><img src="assets/logo_full.png" alt=""><div><h2>Camp- 8 West · Beneficiary list</h2><div class="meta">${esc(describe(f))} · ${fmt(rows.length)} records · Printed ${esc(now)}</div></div></div>
       <table><thead><tr><th>SL</th><th>Name</th><th>Sex</th><th>FCN</th><th>Date of birth</th><th>Relation</th><th>Main Block</th><th>Sub-Block</th><th>Majhi</th><th>Remarks</th></tr></thead><tbody>
       ${rows.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(p.sex)}</td><td>${esc(p.fcn)}</td><td>${esc(XL.displayDate(p.dob))}</td><td>${esc(p.relation)}</td><td>${esc(p.main_block)}</td><td>${esc(p.sub_block)}</td><td>${esc(p.majhi)}</td><td>${esc(p.remarks)}</td></tr>`).join('')}
-      </tbody></table><div class="pfoot">Confidential — for official use only.</div>`;
+      </tbody></table><div class="pfoot">Confidential — for official use only.</div>`, pm);
+  } catch (e) { pm.close(); toast(e.message); }
+}
+async function showPrint(html, pm) {
+  let pa = $('#printArea');
+  if (!pa) { pa = document.createElement('div'); pa.id = 'printArea'; document.body.appendChild(pa); }
+  pa.innerHTML = html;
+  if (pm) pm.close();
+  const img = $('img', pa);
+  if (img) await new Promise((r) => { if (img.complete) r(); else { img.onload = r; img.onerror = r; } });
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('printing') && !window.matchMedia('print').matches) done(); }, 1500); }, 50);
+}
+
+// ---------------- PDF files (pdf-lib, loaded only when needed) ----------------
+let pdfLibLoading = null;
+function loadPdfLib() {
+  if (window.PDFLib) return Promise.resolve();
+  if (!pdfLibLoading) {
+    pdfLibLoading = new Promise((res, rej) => {
+      const sc = document.createElement('script');
+      sc.src = 'assets/vendor/pdf-lib.min.js';
+      sc.onload = res;
+      sc.onerror = () => { pdfLibLoading = null; rej(new Error('Could not load the PDF maker. Check your internet and try again.')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return pdfLibLoading;
+}
+/** Builds a landscape A4 table PDF. cols: [{t, w, right}], rows: arrays of text; styles: optional per-row 'sub' | 'grand'. */
+async function makeTablePdf(title, subtitle, cols, rows, styles) {
+  await loadPdfLib();
+  const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  let logo = null;
+  try { logo = await doc.embedPng(await (await fetch('assets/logo_full.png')).arrayBuffer()); } catch (e) { /* no logo */ }
+  const W = 842, H = 595, M = 28, RH = 15, FS = 8;
+  const safe = (t) => String(t == null ? '' : t).replace(/[–—]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/·/g, '-').replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
+  const fit = (t, w, f) => { t = safe(t); if (f.widthOfTextAtSize(t, FS) <= w) return t; while (t && f.widthOfTextAtSize(t + '...', FS) > w) t = t.slice(0, -1); return t + '...'; };
+  const totalW = cols.reduce((a, c) => a + c.w, 0);
+  const scale = (W - 2 * M) / totalW;
+  const ws = cols.map((c) => c.w * scale);
+  const green = rgb(0.043, 0.365, 0.294), head = rgb(0.804, 0.922, 0.882), alt = rgb(0.965, 0.98, 0.976), line = rgb(0.85, 0.89, 0.87);
+  const stampTxt = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const pages = [];
+  let page, y, i = 0;
+  const newPage = (first) => {
+    page = doc.addPage([W, H]); pages.push(page);
+    y = H - M;
+    if (first) {
+      let tx = M;
+      if (logo) { const lh = 46, lw = lh * logo.width / logo.height; page.drawImage(logo, { x: M, y: y - lh, width: lw, height: lh }); tx = M + lw + 14; }
+      page.drawText(safe(title), { x: tx, y: y - 18, size: 15, font: bold, color: green });
+      page.drawText(safe(subtitle), { x: tx, y: y - 32, size: 9, font, color: rgb(0.3, 0.36, 0.34) });
+      page.drawText(safe('Created ' + stampTxt), { x: tx, y: y - 44, size: 8, font, color: rgb(0.3, 0.36, 0.34) });
+      y -= 58;
+    }
+    page.drawRectangle({ x: M, y: y - RH, width: W - 2 * M, height: RH, color: head });
+    let x = M;
+    cols.forEach((c, k) => {
+      const t = fit(c.t, ws[k] - 6, bold);
+      const tw = bold.widthOfTextAtSize(t, FS);
+      page.drawText(t, { x: c.right ? x + ws[k] - 3 - tw : x + 3, y: y - 10.5, size: FS, font: bold, color: rgb(0.03, 0.25, 0.18) });
+      x += ws[k];
+    });
+    y -= RH;
+  };
+  newPage(true);
+  for (; i < rows.length; i++) {
+    if (y - RH < M + 14) newPage(false);
+    const st = styles && styles[i];
+    if (st === 'grand') page.drawRectangle({ x: M, y: y - RH, width: W - 2 * M, height: RH, color: green });
+    else if (st === 'sub') page.drawRectangle({ x: M, y: y - RH, width: W - 2 * M, height: RH, color: head });
+    else if (i % 2) page.drawRectangle({ x: M, y: y - RH, width: W - 2 * M, height: RH, color: alt });
+    const f = st ? bold : font;
+    let x = M;
+    rows[i].forEach((v, k) => {
+      const t = fit(v, ws[k] - 6, f);
+      const tw = f.widthOfTextAtSize(t, FS);
+      page.drawText(t, { x: cols[k].right ? x + ws[k] - 3 - tw : x + 3, y: y - 10.5, size: FS, font: f, color: st === 'grand' ? rgb(1, 1, 1) : rgb(0.09, 0.13, 0.11) });
+      x += ws[k];
+    });
+    y -= RH;
+    page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.4, color: line });
+    if (i % 3000 === 2999) await new Promise((r) => setTimeout(r, 0));
+  }
+  pages.forEach((pg, k) => {
+    pg.drawText(`Page ${k + 1} of ${pages.length}`, { x: W - M - 60, y: M - 12, size: 8, font, color: rgb(0.4, 0.45, 0.43) });
+    pg.drawText('Camp- 8 West - Confidential, for official use only', { x: M, y: M - 12, size: 8, font, color: rgb(0.4, 0.45, 0.43) });
+  });
+  return new Blob([await doc.save()], { type: 'application/pdf' });
+}
+async function exportPdf(filters) {
+  const f = Object.assign({}, filters || {});
+  const pm = progressModal('Export to PDF');
+  try {
+    const rows = await fetchAll(f, (n, t) => pm.set(`Downloading records… ${fmt(n)} / ${fmt(t)}`, t ? n / t : null));
+    if (!rows.length) { pm.close(); toast('No records to export.'); return; }
+    pm.set(`Creating PDF… (${fmt(rows.length)} records)`, null);
+    await new Promise((r) => setTimeout(r, 30));
+    const blob = await makeTablePdf('Camp- 8 West - Beneficiary list', `${describe(f)} - ${fmt(rows.length)} records`,
+      [{ t: 'SL', w: 34, right: true }, { t: 'Name', w: 150 }, { t: 'Sex', w: 30 }, { t: 'FCN', w: 58 }, { t: 'Date of birth', w: 70 }, { t: 'Relation', w: 52 }, { t: 'Main Block', w: 52 }, { t: 'Sub-Block', w: 56 }, { t: 'Majhi', w: 120 }, { t: 'Remarks', w: 150 }],
+      rows.map((p, i) => [i + 1, p.name, p.sex, p.fcn, XL.displayDate(p.dob), p.relation, p.main_block, p.sub_block, p.majhi, p.remarks]));
+    downloadBlob(blob, `FDMN_8W_${stamp()}.pdf`);
     pm.close();
-    const img = $('img', pa);
-    await new Promise((r) => { if (img.complete) r(); else { img.onload = r; img.onerror = r; } });
-    document.body.classList.add('printing');
-    const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; window.removeEventListener('afterprint', done); };
-    window.addEventListener('afterprint', done);
-    setTimeout(() => { window.print(); setTimeout(() => { if (document.body.classList.contains('printing') && !window.matchMedia('print').matches) done(); }, 1500); }, 50);
+    toast(`PDF with ${fmt(rows.length)} records downloaded.`);
   } catch (e) { pm.close(); toast(e.message); }
 }
 
@@ -776,40 +1108,146 @@ function replyMessage(msg) {
   });
 }
 
-// ---------------- MORE ----------------
-function pageMore(main) {
-  const u = S.user;
-  const item = (key, icon, tone, label, badge) => `<div class="menuitem t-${tone}" data-item="${key}"><div class="tile">${ic(icon)}</div><span class="grow">${label}</span>${badge ? `<span class="tag" style="--c:#D32F2F">${badge} new</span>` : ''}${ic('KeyboardArrowRight')}</div>`;
-  main.innerHTML = topbar('More', null) + `
-    <div class="page pad narrow" style="margin:0 auto">
-      <div class="wcard t-green">${wave()}<div class="in" style="display:flex;align-items:center;gap:14px;padding:16px">
-        <div class="tile" style="border-radius:50%;width:56px;height:56px">${esc((u.name || '?').slice(0, 1).toUpperCase())}</div>
-        <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">${esc(u.name)}</div><div class="muted" style="font-size:13px">${esc(u.email)}</div>
-          <span class="tag" style="margin-top:6px;${isAdmin() ? '--c:#C27410' : ''}">${isAdmin() ? '👑 Admin' : 'Viewer'}</span></div>
-      </div></div>
-      <div class="card menu" style="margin-top:12px">
-        ${isAdmin() ? item('users', 'AccountCircle', 'green', 'Manage users', (S.stats || {}).pending_users) + item('import', 'UploadFile', 'green', 'Import from Excel') : ''}
-        ${item('password', 'Lock', 'green', 'Change password')}
-        ${item('refresh', 'Refresh', 'green', 'Refresh data')}
-        ${item('about', 'Info', 'green', 'About this app')}
+// ---------------- REPORTS ----------------
+let repMain = '';
+const REP_COLS = [['families', 'Families'], ['male', 'Male'], ['female', 'Female'], ['total', 'Total'], ['u5', '0–5'], ['c6', '6–12'], ['c13', '13–17'], ['a18', '18–59'], ['e60', '60+']];
+function reportLines(data) {
+  // returns [{label1, label2, vals:{}, style}] with sub-totals per Main Block and a grand total
+  const out = [];
+  const keys = REP_COLS.map((c) => c[0]).concat(['nodob']);
+  const add = (a, b) => keys.forEach((k) => { if (k !== 'families') a[k] = (a[k] || 0) + (b[k] || 0); });
+  const grand = {};
+  let cur = null, acc = null;
+  const flush = () => { if (cur !== null) { acc.families = (data.families_by_main || {})[cur] || 0; out.push({ a: 'Main Block ' + (cur || '(none)'), b: 'Total', v: acc, style: 'sub' }); } };
+  data.rows.forEach((r) => {
+    if (r.main !== cur) { flush(); cur = r.main; acc = {}; }
+    out.push({ a: r.main, b: r.sub || '(none)', v: r });
+    add(acc, r); add(grand, r);
+  });
+  flush();
+  grand.families = data.families_total || 0;
+  if (data.rows.length) out.push({ a: 'Grand Total', b: '', v: grand, style: 'grand' });
+  return out;
+}
+async function pageReports(main) {
+  main.innerHTML = topbar('Reports', 'Block-wise population summary') + `
+    <div class="page pad">
+      <div class="toolbar" style="margin-bottom:12px">
+        <select class="input" id="repMain" style="max-width:260px"><option value="">All Main Blocks</option>${mainNames().map((n) => `<option value="${esc(n)}" ${n === repMain ? 'selected' : ''}>Main Block ${esc(n)}</option>`).join('')}</select>
+        <span style="flex:1"></span>
+        <button class="btn outline small" data-r="print">${ic('Print')} Print</button>
+        <button class="btn outline small" data-r="pdf">${ic('PictureAsPdf')} PDF</button>
+        <button class="btn small" data-r="xlsx">${ic('Download')} Excel</button>
       </div>
-      <div class="card menu" style="margin-top:12px">${item('signout', 'Logout', 'red', '<span style="color:var(--danger)">Sign out</span>')}</div>
+      <div id="repBox">${loading()}</div>
     </div>`;
+  $('#repMain', main).onchange = (e) => { repMain = e.target.value; render(); };
+  let data;
+  try { data = await api('report', repMain ? { main: repMain } : {}); } catch (e) { $('#repBox').innerHTML = errorBox(e.message); $('[data-retry]').onclick = () => render(); return; }
+  if (route().name !== 'reports') return;
+  const lines = reportLines(data);
+  const hasNoDob = lines.some((l) => l.v.nodob);
+  const cols = REP_COLS.concat(hasNoDob ? [['nodob', 'No DOB']] : []);
+  const title = 'Camp- 8 West - Block-wise population summary';
+  const subtitle = repMain ? 'Main Block ' + repMain : 'All Main Blocks';
+  $('#repBox').innerHTML = lines.length ? `<div class="repwrap"><table class="rep"><thead><tr><th>Main Block</th><th>Sub-Block</th>${cols.map((c) => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>
+    ${lines.map((l) => `<tr class="${l.style || ''}"><td>${esc(l.a)}</td><td>${esc(l.b)}</td>${cols.map((c) => `<td>${fmt(l.v[c[0]])}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div><p class="muted" style="font-size:13px">Ages are counted from the date of birth${hasNoDob ? '; "No DOB" means the record has no date of birth' : ''}. A family split across sub-blocks is counted once in the totals.</p>`
+    : emptyBox('No data', 'There are no records yet.');
+  const tableRows = lines.map((l) => [l.a, l.b].concat(cols.map((c) => l.v[c[0]] || 0)));
+  $$('[data-r]', main).forEach((b) => {
+    b.onclick = async () => {
+      if (!lines.length) { toast('Nothing to export.'); return; }
+      const k = b.dataset.r;
+      if (k === 'xlsx') {
+        downloadBlob(XL.writeXlsx(['Main Block', 'Sub-Block'].concat(cols.map((c) => c[1])), tableRows, [18, 12].concat(cols.map(() => 10))), `FDMN_8W_Report_${stamp()}.xlsx`);
+        toast('Excel report downloaded.');
+      } else if (k === 'pdf') {
+        const pm = progressModal('Export to PDF'); pm.set('Creating PDF…', null);
+        try {
+          const blob = await makeTablePdf(title, subtitle, [{ t: 'Main Block', w: 110 }, { t: 'Sub-Block', w: 70 }].concat(cols.map((c) => ({ t: c[1], w: 52, right: true }))),
+            tableRows.map((r) => r.map((v, i) => (i > 1 ? fmt(v) : v))), lines.map((l) => l.style || ''));
+          downloadBlob(blob, `FDMN_8W_Report_${stamp()}.pdf`); pm.close(); toast('PDF report downloaded.');
+        } catch (e) { pm.close(); toast(e.message); }
+      } else {
+        const now = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+        showPrint(`<div class="phead"><img src="assets/logo_full.png" alt=""><div><h2>${esc(title)}</h2><div class="meta">${esc(subtitle)} · Printed ${esc(now)}</div></div></div>
+          <table><thead><tr><th>Main Block</th><th>Sub-Block</th>${cols.map((c) => `<th style="text-align:right">${c[1]}</th>`).join('')}</tr></thead><tbody>
+          ${lines.map((l) => `<tr style="${l.style === 'grand' ? 'font-weight:900;background:#CDEBE1' : l.style === 'sub' ? 'font-weight:800;background:#EEF7F3' : ''}"><td>${esc(l.a)}</td><td>${esc(l.b)}</td>${cols.map((c) => `<td style="text-align:right">${fmt(l.v[c[0]])}</td>`).join('')}</tr>`).join('')}
+          </tbody></table><div class="pfoot">Confidential — for official use only.</div>`);
+      }
+    };
+  });
+}
+
+// ---------------- SETTINGS ----------------
+function pageSettings(main) {
+  const u = S.user;
+  const item = (key, icon, tone, label) => `<div class="menuitem t-${tone}" data-item="${key}"><div class="tile">${ic(icon)}</div><span class="grow">${label}</span>${ic('KeyboardArrowRight')}</div>`;
+  const ci = (S.settings && S.settings.camp_info) || {};
+  const f = (k, label) => `<label class="field"><span>${label}</span><input class="input" name="${k}" value="${esc(ci[k] || '')}"></label>`;
+  main.innerHTML = topbar('Settings', null) + `
+    <div class="page pad"><div class="settings-grid">
+      <div>
+        <div class="wcard t-green">${wave()}<div class="in" style="display:flex;align-items:center;gap:14px;padding:16px">
+          <div class="tile" style="border-radius:50%;width:56px;height:56px">${esc((u.name || '?').slice(0, 1).toUpperCase())}</div>
+          <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">${esc(u.name)}</div><div class="muted" style="font-size:13px">${esc(u.email)}</div>
+            <span class="tag" style="margin-top:6px;${isAdmin() ? '--c:#C27410' : ''}">${isAdmin() ? '👑 Admin' : 'Viewer'}</span></div>
+        </div></div>
+        <div class="card menu" style="margin-top:12px">
+          ${isAdmin() ? item('users', 'PeopleOutline', 'green', 'Manage users') + item('import', 'UploadFile', 'green', 'Import from Excel') : ''}
+          ${item('password', 'Lock', 'green', 'Change password')}
+          ${item('refresh', 'Refresh', 'green', 'Refresh data')}
+          ${item('about', 'Info', 'green', 'About this app')}
+          ${item('signout', 'Logout', 'red', '<span style="color:var(--danger)">Sign out</span>')}
+        </div>
+      </div>
+      ${isAdmin() ? `<div>
+        <section class="panel"><div class="ph">${ic('Info')}<h3>Camp Information</h3></div><div class="pb">
+          <form id="setCi"><div class="row2">${f('area', 'Camp Area')}${f('organisations', 'Total Organisations')}</div>
+            <div class="row2">${f('un_agencies', 'UN Agencies')}${f('ngos', "NGO's & INGO's")}</div>
+            <div class="row2">${f('projects', 'Total Projects')}${f('sectors', 'Total Sectors')}</div>
+            <div class="err" id="setCiErr"></div><button class="btn" type="submit">${ic('Save')} Save Camp Information</button></form></div></section>
+        <section class="panel" style="margin-top:14px"><div class="ph">${ic('ContactPhone')}<h3>Emergency Contacts</h3></div><div class="pb">
+          <div id="setC">${((S.settings && S.settings.contacts) || []).map(contactRow).join('')}</div>
+          <button class="btn ghost small" data-addc>${ic('Add')} Add contact</button>
+          <div class="err" id="setCErr"></div><button class="btn" data-savec>${ic('Save')} Save contacts</button></div></section>
+      </div>` : ''}
+    </div></div>`;
   $$('[data-item]', main).forEach((el) => {
     el.onclick = async () => {
       const k = el.dataset.item;
       if (k === 'users' || k === 'import' || k === 'password') go(k);
-      else if (k === 'refresh') { changed(); toast('Refreshed.'); }
+      else if (k === 'refresh') { changed(); loadSettings(); toast('Refreshed.'); }
       else if (k === 'about') modal(`<h3>Camp- 8 West</h3><p>FDMN Database · Web version ${APP_VERSION}</p><p class="muted">Beneficiary records for Camp-8W, organised by Main Block and Sub-Block. Data is stored securely on app.informationplant.com and is only visible to approved users. The same data is used by the Android app.</p><div class="actions"><button class="btn" data-ok>OK</button></div>`, (m, close) => { $('[data-ok]', m).onclick = close; });
       else if (k === 'signout') { if (await confirmBox('Sign out?', 'You will need your email and password to sign in again.', 'Sign out')) signOut(); }
     };
   });
+  const form = $('#setCi', main);
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('button[type=submit]', form); busyBtn(btn, true);
+      try { const r = await api('settings_save', { key: 'camp_info', value: Object.fromEntries(new FormData(form)) }); S.settings = Object.assign({}, S.settings, { camp_info: r.value }); toast('Camp Information saved.'); }
+      catch (ex) { $('#setCiErr').textContent = ex.message; }
+      busyBtn(btn, false);
+    };
+    const box = $('#setC', main);
+    bindContactEditor(box);
+    $('[data-addc]', main).onclick = () => box.insertAdjacentHTML('beforeend', contactRow({ type: 'other' }));
+    $('[data-savec]', main).onclick = async (e) => {
+      const btn = e.currentTarget; busyBtn(btn, true);
+      try { const r = await api('settings_save', { key: 'contacts', value: readContacts(box) }); S.settings = Object.assign({}, S.settings, { contacts: r.value }); toast('Emergency contacts saved.'); }
+      catch (ex) { $('#setCErr').textContent = ex.message; }
+      busyBtn(btn, false);
+    };
+  }
 }
 
 // ---------------- USERS (admin) ----------------
 let userFilter = '';
 async function pageUsers(main) {
-  if (!isAdmin()) { go('more'); return; }
+  if (!isAdmin()) { go('settings'); return; }
   main.innerHTML = topbar('Manage users', '', { back: true }) + `<div class="page pad"><div id="uChips" class="chips"></div><div id="uList">${loading()}</div></div>`;
   let list;
   try { list = (await api('users')).users || []; loadStats(); } catch (e) { $('#uList').innerHTML = errorBox(e.message); $('[data-retry]').onclick = () => render(); return; }
@@ -883,7 +1321,7 @@ async function userAction(act, u) {
 
 // ---------------- IMPORT (admin) ----------------
 function pageImport(main) {
-  if (!isAdmin()) { go('more'); return; }
+  if (!isAdmin()) { go('settings'); return; }
   const st = { parsed: null, sent: 0, busy: false, done: false, replace: (S.stats || {}).total > 0 };
   main.innerHTML = topbar('Import from Excel', null, { back: true }) + `
     <div class="page pad narrow" style="margin:0 auto">
@@ -972,7 +1410,7 @@ function pagePassword(main) {
     if (f.n1.value !== f.n2.value) { err.textContent = 'The two new passwords do not match.'; return; }
     const btn = $('button[type=submit]', f);
     busyBtn(btn, true);
-    try { await api('change_password', { old: f.old.value, new: f.n1.value }); toast('Password changed.'); back('more'); }
+    try { await api('change_password', { old: f.old.value, new: f.n1.value }); toast('Password changed.'); back('settings'); }
     catch (ex) { err.textContent = ex.message; busyBtn(btn, false); }
   };
 }
@@ -983,7 +1421,7 @@ function pagePassword(main) {
   splash.className = 'splash';
   splash.innerHTML = '<img src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West"><b>Camp- 8 West</b><span class="spinner"></span>';
   document.body.appendChild(splash);
-  const ready = S.token && S.user ? Promise.all([loadMeta(), loadStats()]) : Promise.resolve();
+  const ready = S.token && S.user ? Promise.all([loadMeta(), loadStats(), loadSettings()]) : Promise.resolve();
   Promise.all([ready, new Promise((r) => setTimeout(r, 1200))]).then(() => {
     splash.remove();
     render();

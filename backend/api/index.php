@@ -18,6 +18,7 @@ $actions = [
     'save', 'delete', 'import',
     'users', 'user_set', 'user_delete',
     'msg_send', 'msg_mine', 'msg_all', 'msg_reply', 'msg_close',
+    'settings_get', 'settings_save', 'report',
 ];
 
 // ================= public =================
@@ -100,14 +101,18 @@ function act_stats() {
         SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS u5,
         SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS c6,
         SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS c13,
-        SUM(CASE WHEN dob <= ? THEN 1 ELSE 0 END) AS e60
+        SUM(CASE WHEN dob <= ? THEN 1 ELSE 0 END) AS e60,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS a18
         FROM beneficiaries WHERE dob IS NOT NULL");
-    $st->execute([$b['y6'], $b['today'], $b['y13'], $b['y6'], $b['y18'], $b['y13'], $b['y60']]);
+    $st->execute([$b['y6'], $b['today'], $b['y13'], $b['y6'], $b['y18'], $b['y13'], $b['y60'], $b['y60'], $b['y18']]);
     $a = $st->fetch();
+    $mainBlocks = (int)db()->query("SELECT COUNT(*) FROM (SELECT DISTINCT main_block FROM beneficiaries WHERE main_block <> '') t")->fetchColumn();
+    $subBlocks = (int)db()->query("SELECT COUNT(*) FROM (SELECT DISTINCT main_block, sub_block FROM beneficiaries WHERE sub_block <> '') t")->fetchColumn();
     $res = [
         'total' => (int)$r['total'], 'families' => (int)$r['families'],
         'male' => (int)$r['male'], 'female' => (int)$r['female'],
-        'under5' => (int)$a['u5'], 'age6to12' => (int)$a['c6'], 'age13to17' => (int)$a['c13'], 'elderly' => (int)$a['e60'],
+        'under5' => (int)$a['u5'], 'age6to12' => (int)$a['c6'], 'age13to17' => (int)$a['c13'], 'elderly' => (int)$a['e60'], 'age18to59' => (int)$a['a18'],
+        'main_blocks' => $mainBlocks, 'sub_blocks' => $subBlocks,
         'pending_users' => 0, 'open_messages' => 0, 'unread_replies' => 0,
     ];
     if ($u['role'] === 'admin') {
@@ -174,6 +179,8 @@ function age_condition($group, &$args) {
         case 'child': $args[] = $b['y18']; $args[] = $b['today']; return "(dob > ? AND dob <= ?)";
         case 'adult': $args[] = $b['y18']; return "(dob <= ?)";
         case 'e60': $args[] = $b['y60']; return "(dob <= ?)";
+        case 'a18': $args[] = $b['y60']; $args[] = $b['y18']; return "(dob > ? AND dob <= ?)";
+        case 'nodob': return "(dob IS NULL)";
     }
     return '';
 }
@@ -459,6 +466,123 @@ function act_msg_close() {
     $st = db()->prepare("UPDATE messages SET status = 'closed' WHERE id = ?");
     $st->execute([(int)p('id', 0)]);
     out(['message' => 'Closed.']);
+}
+
+// ================= settings (camp information, emergency contacts) =================
+
+function settings_table() {
+    if (is_sqlite()) db()->exec("CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    else db()->exec("CREATE TABLE IF NOT EXISTS settings (k VARCHAR(50) NOT NULL PRIMARY KEY, v MEDIUMTEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+function settings_defaults() {
+    return [
+        'camp_info' => [
+            'area' => '191 Acres', 'organisations' => '26', 'un_agencies' => '7',
+            'ngos' => '19', 'projects' => '40', 'sectors' => '7',
+        ],
+        'contacts' => [
+            ['type' => 'fire', 'name' => 'Fire Services', 'phone' => '+88 01812 345678'],
+            ['type' => 'police', 'name' => 'APBn Police Camp', 'phone' => '+88 01812 345678'],
+            ['type' => 'hospital', 'name' => 'Hospital', 'phone' => '+88 01812 345678'],
+            ['type' => 'site', 'name' => 'Site Management', 'phone' => '+88 01812 345678'],
+        ],
+    ];
+}
+
+function act_settings_get() {
+    current_user();
+    settings_table();
+    $res = settings_defaults();
+    foreach (db()->query("SELECT k, v FROM settings") as $r) {
+        $v = json_decode($r['v'], true);
+        if (array_key_exists($r['k'], $res) && is_array($v)) $res[$r['k']] = $v;
+    }
+    out(['settings' => $res]);
+}
+
+function act_settings_save() {
+    require_admin();
+    settings_table();
+    $key = s('key', 50);
+    $val = p('value', null);
+    $clean = function ($v, $max) {
+        $v = is_scalar($v) ? (string)$v : '';
+        return mb_substr(trim(preg_replace('/\s+/u', ' ', $v)), 0, $max);
+    };
+    if ($key === 'camp_info') {
+        if (!is_array($val)) fail('Nothing to save.');
+        $out = [];
+        foreach (array_keys(settings_defaults()['camp_info']) as $k) $out[$k] = $clean(isset($val[$k]) ? $val[$k] : '', 40);
+    } elseif ($key === 'contacts') {
+        if (!is_array($val)) fail('Nothing to save.');
+        $out = [];
+        foreach (array_slice($val, 0, 12) as $c) {
+            if (!is_array($c)) continue;
+            $type = $clean(isset($c['type']) ? $c['type'] : 'other', 20);
+            if (!in_array($type, ['fire', 'police', 'hospital', 'site', 'other'], true)) $type = 'other';
+            $name = $clean(isset($c['name']) ? $c['name'] : '', 60);
+            $phone = $clean(isset($c['phone']) ? $c['phone'] : '', 30);
+            if ($name === '' && $phone === '') continue;
+            $out[] = ['type' => $type, 'name' => $name, 'phone' => $phone];
+        }
+    } else {
+        fail('Unknown setting.');
+    }
+    $pdo = db();
+    $pdo->beginTransaction();
+    $pdo->prepare("DELETE FROM settings WHERE k = ?")->execute([$key]);
+    $pdo->prepare("INSERT INTO settings (k, v) VALUES (?, ?)")->execute([$key, json_encode($out, JSON_UNESCAPED_UNICODE)]);
+    $pdo->commit();
+    out(['value' => $out, 'message' => 'Saved.']);
+}
+
+// ================= reports =================
+
+function act_report() {
+    current_user();
+    $b = age_bounds();
+    $args = [$b['y6'], $b['today'], $b['y13'], $b['y6'], $b['y18'], $b['y13'], $b['y60'], $b['y18'], $b['y60']];
+    $where = '';
+    $main = s('main', 30);
+    $sub = s('sub', 30);
+    if ($main !== '') { $where .= ($where ? ' AND' : ' WHERE') . ' main_block = ?'; $args[] = $main; }
+    if ($sub !== '') { $where .= ($where ? ' AND' : ' WHERE') . ' sub_block = ?'; $args[] = $sub; }
+    $st = db()->prepare("SELECT main_block, sub_block, COUNT(*) AS total, COUNT(DISTINCT NULLIF(fcn, '')) AS families,
+        SUM(CASE WHEN sex = 'M' THEN 1 ELSE 0 END) AS male,
+        SUM(CASE WHEN sex = 'F' THEN 1 ELSE 0 END) AS female,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS u5,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS c6,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS c13,
+        SUM(CASE WHEN dob > ? AND dob <= ? THEN 1 ELSE 0 END) AS a18,
+        SUM(CASE WHEN dob <= ? THEN 1 ELSE 0 END) AS e60,
+        SUM(CASE WHEN dob IS NULL THEN 1 ELSE 0 END) AS nodob
+        FROM beneficiaries" . $where . " GROUP BY main_block, sub_block");
+    $st->execute($args);
+    $rows = [];
+    foreach ($st->fetchAll() as $r) {
+        $row = ['main' => (string)$r['main_block'], 'sub' => (string)$r['sub_block']];
+        foreach (['total', 'families', 'male', 'female', 'u5', 'c6', 'c13', 'a18', 'e60', 'nodob'] as $k) $row[$k] = (int)$r[$k];
+        $rows[] = $row;
+    }
+    usort($rows, function ($x, $y) {
+        $c = strnatcasecmp($x['main'], $y['main']);
+        return $c !== 0 ? $c : strnatcasecmp($x['sub'], $y['sub']);
+    });
+    // families across the whole selection (a family is counted once even if split over sub-blocks)
+    $args2 = [];
+    $w2 = '';
+    if ($main !== '') { $w2 .= ($w2 ? ' AND' : ' WHERE') . ' main_block = ?'; $args2[] = $main; }
+    if ($sub !== '') { $w2 .= ($w2 ? ' AND' : ' WHERE') . ' sub_block = ?'; $args2[] = $sub; }
+    $st = db()->prepare("SELECT main_block, COUNT(DISTINCT NULLIF(fcn, '')) AS f FROM beneficiaries" . $w2 . " GROUP BY main_block");
+    $st->execute($args2);
+    $famByMain = [];
+    $famTotal = 0;
+    foreach ($st->fetchAll() as $r) $famByMain[(string)$r['main_block']] = (int)$r['f'];
+    $st = db()->prepare("SELECT COUNT(DISTINCT NULLIF(fcn, '')) FROM beneficiaries" . $w2);
+    $st->execute($args2);
+    $famTotal = (int)$st->fetchColumn();
+    out(['rows' => $rows, 'families_by_main' => $famByMain, 'families_total' => $famTotal, 'date' => now()]);
 }
 
 // ================= run =================
