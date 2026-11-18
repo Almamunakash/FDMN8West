@@ -231,11 +231,7 @@ function openPopover(anchor, html, onMount) {
   const p = document.createElement('div');
   p.className = 'popover';
   p.innerHTML = html;
-  document.body.appendChild(p);
-  const r = anchor.getBoundingClientRect();
-  const w = p.offsetWidth;
-  p.style.top = (r.bottom + 8) + 'px';
-  p.style.left = Math.max(10, Math.min(window.innerWidth - w - 10, r.right - w)) + 'px';
+  ($('#tools') || document.body).appendChild(p);
   if (onMount) onMount(p);
   setTimeout(() => {
     const off = (e) => { if (!p.contains(e.target) && !anchor.contains(e.target)) { p.remove(); document.removeEventListener('click', off, true); } };
@@ -442,8 +438,10 @@ function pageHome(main) {
   main.innerHTML = `<div class="dash page">
     <div class="banner">
       <button class="iconbtn menubtn" data-menu-open title="Menu">${ic('Menu')}</button>
-      <button class="bell" id="bellBtn" title="Notifications">${ic('Notifications')}<i class="dot hidden" id="bellDot"></i></button>
-      <button class="datecard" id="dateBtn" title="Calendar">${ic('CalendarMonth')}<div><b>${today.getDate()} ${MONTHS_LONG[today.getMonth()].slice(0, 3)} ${today.getFullYear()}</b><small>${DAYS[today.getDay()]} ${ic('KeyboardArrowDown')}</small></div></button>
+      <div class="tools" id="tools">
+        <button class="bell" id="bellBtn" title="Notifications">${ic('Notifications')}<i class="dot hidden" id="bellDot"></i></button>
+        <button class="datecard" id="dateBtn" title="Calendar">${ic('CalendarMonth')}<div><b>${today.getDate()} ${MONTHS_LONG[today.getMonth()].slice(0, 3)} ${today.getFullYear()}</b><small>${DAYS[today.getDay()]} ${ic('KeyboardArrowDown')}</small></div></button>
+      </div>
     </div>
     <div class="sumcards">
       ${sum('green', 'Groups', 'Groups', st.total, 'Total Population', '', {})}
