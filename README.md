@@ -5,7 +5,7 @@ Android app for Camp-8W beneficiary records (Main Block → Sub-Block → famili
 ## Parts
 
 - `app/` — Android app (Kotlin, Jetpack Compose). GitHub Actions builds the APK on every push → artifact **FDMN8West-apk**.
-- `backend/` — goes in the root folder of app.informationplant.com: `index.php` (landing page) and `api/` (PHP API + one-time installer).
+- `backend/` — goes in the root folder of app.informationplant.com: `index.php` + `assets/` + `manifest.json` (the **web app**, responsive for phone and PC) and `api/` (PHP API + one-time installer). The web app and the Android app use the same API and data.
 
 ## Server setup (once, in cPanel)
 
