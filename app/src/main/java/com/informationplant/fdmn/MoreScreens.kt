@@ -81,19 +81,19 @@ fun MoreScreen(app: AppCtl) {
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             WaveCard(ToneGreen, Modifier.fillMaxWidth(), onClick = { profile = true }) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = CircleShape, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(52.dp)) {
+                    Surface(shape = CircleShape, color = ToneGreen.dark, modifier = Modifier.size(52.dp)) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(user.name.take(1).uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Brand)
+                            Text(user.name.take(1).uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(user.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.White)
-                        Text(user.email, fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f))
+                        Text(user.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color(0xFF14201C))
+                        Text(user.email, fontSize = 13.sp, color = Color(0xFF3A4743))
                         Spacer(Modifier.height(4.dp))
                         Tag((if (user.isMaster) "👑 " else "") + user.roleName, if (user.isAdmin) Accent else Brand)
                     }
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = ToneGreen.dark)
                 }
             }
             MenuGroup {
@@ -125,7 +125,7 @@ fun MoreScreen(app: AppCtl) {
 }
 
 object BuildConfigInfo {
-    const val version = "2.0"
+    const val version = "2.1"
 }
 
 /** Profile pop-up: Update Information, Reset Password, Delete Account, Sign out. */
