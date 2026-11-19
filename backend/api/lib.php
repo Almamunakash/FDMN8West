@@ -2,7 +2,7 @@
 // 8 West FDMN Database - shared helpers. Not opened directly.
 if (!defined('FDMN')) { http_response_code(403); exit('Forbidden'); }
 
-const API_VERSION = '1.3';
+const API_VERSION = '2.0';
 date_default_timezone_set('Asia/Dhaka');
 
 if (!function_exists('mb_substr')) {
@@ -197,10 +197,21 @@ function current_user() {
     return $user;
 }
 
+function is_admin_role($role) { return $role === 'admin' || $role === 'master'; }
+
 function require_admin() {
     $u = current_user();
-    if ($u['role'] !== 'admin') fail('Only an Admin can do this.', 'forbidden');
+    if (!is_admin_role($u['role'])) fail('Only an Admin can do this.', 'forbidden');
     return $u;
+}
+
+/** Can $actor manage (edit, block, reset, delete) $target? Master: Admins and Users. Admin: Users only. */
+function can_manage($actor, $target) {
+    if ((int)$actor['id'] === (int)$target['id']) return false;
+    if ($target['role'] === 'master') return false;
+    if ($actor['role'] === 'master') return true;
+    if ($actor['role'] === 'admin') return $target['role'] === 'viewer';
+    return false;
 }
 
 // ---------- beneficiaries ----------

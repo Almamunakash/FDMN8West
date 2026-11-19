@@ -19,6 +19,7 @@ $actions = [
     'users', 'user_set', 'user_delete',
     'msg_send', 'msg_mine', 'msg_all', 'msg_reply', 'msg_close',
     'settings_get', 'settings_save', 'report',
+    'user_add', 'me_update', 'delete_me',
 ];
 
 // ================= public =================
@@ -115,7 +116,7 @@ function act_stats() {
         'main_blocks' => $mainBlocks, 'sub_blocks' => $subBlocks,
         'pending_users' => 0, 'open_messages' => 0, 'unread_replies' => 0,
     ];
-    if ($u['role'] === 'admin') {
+    if (is_admin_role($u['role'])) {
         $res['pending_users'] = (int)db()->query("SELECT COUNT(*) FROM users WHERE status = 'pending'")->fetchColumn();
         $res['open_messages'] = (int)db()->query("SELECT COUNT(*) FROM messages WHERE status = 'open'")->fetchColumn();
     }
@@ -348,23 +349,65 @@ function act_import() {
 
 function act_users() {
     require_admin();
-    $rows = db()->query("SELECT * FROM users ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, name")->fetchAll();
-    out(['users' => array_map('user_public', $rows)]);
+    $rows = db()->query("SELECT * FROM users ORDER BY CASE role WHEN 'master' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, CASE status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, name")->fetchAll();
+    $hasMaster = false;
+    foreach ($rows as $r) if ($r['role'] === 'master') $hasMaster = true;
+    out(['users' => array_map('user_public', $rows), 'has_master' => $hasMaster]);
+}
+
+function find_user($id) {
+    $st = db()->prepare("SELECT * FROM users WHERE id = ?");
+    $st->execute([(int)$id]);
+    $u = $st->fetch();
+    if (!$u) fail('User not found.');
+    return $u;
+}
+
+function email_taken($email, $exceptId = 0) {
+    $st = db()->prepare("SELECT id FROM users WHERE email = ? AND id <> ?");
+    $st->execute([$email, (int)$exceptId]);
+    return (bool)$st->fetch();
+}
+
+function act_user_add() {
+    $me = require_admin();
+    $name = s('name', 100);
+    $email = strtolower(s('email', 150));
+    $pass = (string)p('password', '');
+    $role = s('role', 10);
+    if ($role === '') $role = 'viewer';
+    if (mb_strlen_safe($name) < 2) fail('Please enter the full name.');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Please enter a valid email address.');
+    if (strlen($pass) < 6) fail('Password must be at least 6 characters.');
+    if (!in_array($role, ['viewer', 'admin', 'master'], true)) fail('Unknown role.');
+    if ($role === 'admin' && $me['role'] !== 'master') fail('Only the Master Admin can add an Admin.', 'forbidden');
+    if ($role === 'master') {
+        $n = (int)db()->query("SELECT COUNT(*) FROM users WHERE role = 'master'")->fetchColumn();
+        if ($n > 0) fail('There is already a Master Admin.');
+    }
+    if (email_taken($email)) fail('This email is already registered.');
+    db()->prepare("INSERT INTO users (name, email, pass_hash, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")
+        ->execute([$name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, now()]);
+    out(['message' => 'User added.']);
 }
 
 function act_user_set() {
     $me = require_admin();
-    $id = (int)p('id', 0);
-    $st = db()->prepare("SELECT * FROM users WHERE id = ?");
-    $st->execute([$id]);
-    $u = $st->fetch();
-    if (!$u) fail('User not found.');
+    $u = find_user(p('id', 0));
+    if (!can_manage($me, $u)) {
+        if ($u['role'] === 'master') fail('The Master Admin account cannot be changed by others.', 'forbidden');
+        if ((int)$u['id'] === (int)$me['id']) fail('Use your profile to change your own account.', 'forbidden');
+        fail('Only the Master Admin can change an Admin.', 'forbidden');
+    }
+    $id = (int)$u['id'];
     $role = s('role', 10);
     $status = s('status', 10);
     $pass = (string)p('password', '');
-    if ($id === (int)$me['id'] && ($role !== '' || $status !== '')) fail('You cannot change your own role or status.');
+    $name = s('name', 100);
+    $email = strtolower(s('email', 150));
     $endSessions = false;
     if ($role !== '') {
+        if ($me['role'] !== 'master') fail('Only the Master Admin can change roles.', 'forbidden');
         if (!in_array($role, ['admin', 'viewer'], true)) fail('Unknown role.');
         db()->prepare("UPDATE users SET role = ? WHERE id = ?")->execute([$role, $id]);
     }
@@ -373,25 +416,54 @@ function act_user_set() {
         db()->prepare("UPDATE users SET status = ? WHERE id = ?")->execute([$status, $id]);
         if ($status !== 'active') $endSessions = true;
     }
+    if ($name !== '' || $email !== '') {
+        if ($name !== '' && mb_strlen_safe($name) < 2) fail('Please enter the full name.');
+        if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Please enter a valid email address.');
+        if ($email !== '' && email_taken($email, $id)) fail('This email is already used by another account.');
+        db()->prepare("UPDATE users SET name = ?, email = ? WHERE id = ?")
+            ->execute([$name !== '' ? $name : $u['name'], $email !== '' ? $email : $u['email'], $id]);
+    }
     if ($pass !== '') {
         if (strlen($pass) < 6) fail('Password must be at least 6 characters.');
         db()->prepare("UPDATE users SET pass_hash = ? WHERE id = ?")->execute([password_hash($pass, PASSWORD_DEFAULT), $id]);
         $endSessions = true;
     }
     if ($endSessions) db()->prepare("DELETE FROM sessions WHERE user_id = ?")->execute([$id]);
-    $st->execute([$id]);
-    out(['user' => user_public($st->fetch()), 'message' => 'Saved.']);
+    out(['user' => user_public(find_user($id)), 'message' => 'Saved.']);
 }
 
 function act_user_delete() {
     $me = require_admin();
-    $id = (int)p('id', 0);
-    if ($id === (int)$me['id']) fail('You cannot delete your own account.');
-    db()->prepare("DELETE FROM sessions WHERE user_id = ?")->execute([$id]);
-    $st = db()->prepare("DELETE FROM users WHERE id = ?");
-    $st->execute([$id]);
-    if ($st->rowCount() === 0) fail('User not found.');
+    $u = find_user(p('id', 0));
+    if (!can_manage($me, $u)) {
+        if ($u['role'] === 'master') fail('The Master Admin account cannot be deleted.', 'forbidden');
+        if ((int)$u['id'] === (int)$me['id']) fail('Use your profile to delete your own account.', 'forbidden');
+        fail('Only the Master Admin can delete an Admin.', 'forbidden');
+    }
+    db()->prepare("DELETE FROM sessions WHERE user_id = ?")->execute([$u['id']]);
+    db()->prepare("DELETE FROM users WHERE id = ?")->execute([$u['id']]);
     out(['message' => 'User deleted.']);
+}
+
+// ----- own profile -----
+function act_me_update() {
+    $me = current_user();
+    $name = s('name', 100);
+    $email = strtolower(s('email', 150));
+    if (mb_strlen_safe($name) < 2) fail('Please enter your full name.');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Please enter a valid email address.');
+    if (email_taken($email, $me['id'])) fail('This email is already used by another account.');
+    db()->prepare("UPDATE users SET name = ?, email = ? WHERE id = ?")->execute([$name, $email, $me['id']]);
+    out(['user' => user_public(find_user($me['id'])), 'message' => 'Your information was updated.']);
+}
+
+function act_delete_me() {
+    $me = current_user();
+    if ($me['role'] === 'master') fail('The Master Admin account cannot be deleted.', 'forbidden');
+    if (!password_verify((string)p('password', ''), $me['pass_hash'])) fail('Your password is wrong.');
+    db()->prepare("DELETE FROM sessions WHERE user_id = ?")->execute([$me['id']]);
+    db()->prepare("DELETE FROM users WHERE id = ?")->execute([$me['id']]);
+    out(['message' => 'Your account was deleted.']);
 }
 
 // ================= messages =================
@@ -475,18 +547,33 @@ function settings_table() {
     else db()->exec("CREATE TABLE IF NOT EXISTS settings (k VARCHAR(50) NOT NULL PRIMARY KEY, v MEDIUMTEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
+const MAP_DEFAULT = 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d29759.07405293784!2d92.148192!3d21.196756399999998!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x30ade7cf0e264ad3%3A0x15725b2ec60bce27!2sCamp%208W%20CiC%20Office!5e0!3m2!1sen!2sbd!4v1795117524177!5m2!1sen!2sbd';
+
 function settings_defaults() {
+    $orgs = ['Action Aid Bangladesh', 'BLAST', 'Brac', 'CDD', 'CODEC', 'DRC', 'DSS', 'IPAS-BD', 'IRC', "Mukti Cox's Bazar",
+        'MSF', 'NRC', 'RTMI', 'VERC', 'YPSA', 'FIVDB', 'World Vision', 'Friendship', 'Handicap International', 'MSI',
+        'SARPV', 'Caritas Bangladesh', 'JNUS', 'TDF (TDV)', 'ESDO', 'ASEAB'];
+    $services = [['Women’s friendly space (WFS)', '02'], ['Child friendly space (CFS)', '23'], ['Learning Center (LC)', '184'],
+        ['Hefej Khana', '22'], ['Mosque', '72'], ['Health facilities', '03'], ['Nutrition facilities', '02'], ['Ring well/wells', '0'],
+        ['Tap stands', '388'], ['Bathing Cubicles', '703'], ['Latrine', '1883'], ['SSL', '380'], ['Mini Grid Pole', '123'],
+        ['Nano Grid', '01'], ['Multipurpose Center', '03'], ['FSM', '12'], ['SWM', '03']];
     return [
-        'camp_info' => [
-            'area' => '191 Acres', 'organisations' => '26', 'un_agencies' => '7',
-            'ngos' => '19', 'projects' => '40', 'sectors' => '7',
-        ],
+        'camp_info2' => ['area' => '192 Acres', 'projects' => '40', 'sectors' => '7', 'extra' => []],
         'contacts' => [
             ['type' => 'fire', 'name' => 'Fire Services', 'phone' => '+88 01812 345678'],
             ['type' => 'police', 'name' => 'APBn Police Camp', 'phone' => '+88 01812 345678'],
             ['type' => 'hospital', 'name' => 'Hospital', 'phone' => '+88 01812 345678'],
             ['type' => 'site', 'name' => 'Site Management', 'phone' => '+88 01812 345678'],
         ],
+        'office' => [
+            ['designation' => 'Camp-in-Charge', 'name' => 'Ms. Tapti Chakma', 'phone' => '+88 01840-025084'],
+            ['designation' => 'Documentation Officer (DO)', 'name' => 'Mr. AL Mamun Akash', 'phone' => '+88 01814-279673'],
+            ['designation' => 'Care and Maintenance Officer (CMO)', 'name' => 'Mr. Md. Masud Parvez', 'phone' => '+88 01847-424115'],
+            ['designation' => 'Community Mobilization Assistant (CMA)', 'name' => 'Mr. Md. Abdur Rahim', 'phone' => '+88 01812-362811'],
+        ],
+        'orgs' => ['updated' => '', 'items' => array_map(function ($n) { return ['name' => $n, 'work' => '']; }, $orgs)],
+        'services' => ['updated' => '', 'items' => array_map(function ($x) { return ['name' => $x[0], 'count' => $x[1]]; }, $services)],
+        'map' => ['url' => MAP_DEFAULT],
     ];
 }
 
@@ -506,26 +593,44 @@ function act_settings_save() {
     settings_table();
     $key = s('key', 50);
     $val = p('value', null);
+    if (!is_array($val)) fail('Nothing to save.');
     $clean = function ($v, $max) {
         $v = is_scalar($v) ? (string)$v : '';
         return mb_substr(trim(preg_replace('/\s+/u', ' ', $v)), 0, $max);
     };
-    if ($key === 'camp_info') {
-        if (!is_array($val)) fail('Nothing to save.');
+    $list = function ($arr, $fields, $limit) use ($clean) {
         $out = [];
-        foreach (array_keys(settings_defaults()['camp_info']) as $k) $out[$k] = $clean(isset($val[$k]) ? $val[$k] : '', 40);
-    } elseif ($key === 'contacts') {
-        if (!is_array($val)) fail('Nothing to save.');
-        $out = [];
-        foreach (array_slice($val, 0, 12) as $c) {
-            if (!is_array($c)) continue;
-            $type = $clean(isset($c['type']) ? $c['type'] : 'other', 20);
-            if (!in_array($type, ['fire', 'police', 'hospital', 'site', 'other'], true)) $type = 'other';
-            $name = $clean(isset($c['name']) ? $c['name'] : '', 60);
-            $phone = $clean(isset($c['phone']) ? $c['phone'] : '', 30);
-            if ($name === '' && $phone === '') continue;
-            $out[] = ['type' => $type, 'name' => $name, 'phone' => $phone];
+        if (!is_array($arr)) return $out;
+        foreach (array_slice(array_values($arr), 0, $limit) as $row) {
+            if (!is_array($row)) continue;
+            $r = [];
+            $any = false;
+            foreach ($fields as $f => $max) { $r[$f] = $clean(isset($row[$f]) ? $row[$f] : '', $max); if ($r[$f] !== '') $any = true; }
+            if ($any) $out[] = $r;
         }
+        return $out;
+    };
+    if ($key === 'camp_info2') {
+        $out = ['area' => $clean(isset($val['area']) ? $val['area'] : '', 40), 'projects' => $clean(isset($val['projects']) ? $val['projects'] : '', 40),
+            'sectors' => $clean(isset($val['sectors']) ? $val['sectors'] : '', 40),
+            'extra' => $list(isset($val['extra']) ? $val['extra'] : [], ['label' => 60, 'value' => 60], 30)];
+    } elseif ($key === 'contacts') {
+        $out = [];
+        foreach ($list($val, ['type' => 20, 'name' => 60, 'phone' => 30], 12) as $c) {
+            if (!in_array($c['type'], ['fire', 'police', 'hospital', 'site', 'other'], true)) $c['type'] = 'other';
+            $out[] = $c;
+        }
+    } elseif ($key === 'office') {
+        $out = $list($val, ['designation' => 80, 'name' => 80, 'phone' => 30], 40);
+    } elseif ($key === 'orgs') {
+        $out = ['updated' => now(), 'items' => $list(isset($val['items']) ? $val['items'] : [], ['name' => 100, 'work' => 200], 200)];
+    } elseif ($key === 'services') {
+        $out = ['updated' => now(), 'items' => $list(isset($val['items']) ? $val['items'] : [], ['name' => 100, 'count' => 20], 200)];
+    } elseif ($key === 'map') {
+        $url = $clean(isset($val['url']) ? $val['url'] : '', 2000);
+        if (preg_match('/src="([^"]+)"/', $url, $m)) $url = html_entity_decode($m[1]);
+        if ($url !== '' && strpos($url, 'https://www.google.com/maps/embed?') !== 0) fail('Please paste a Google Maps "Embed a map" link.');
+        $out = ['url' => $url];
     } else {
         fail('Unknown setting.');
     }

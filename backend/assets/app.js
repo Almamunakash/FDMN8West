@@ -2,8 +2,8 @@
 'use strict';
 
 const API_URL = 'api/index.php';
-const APP_VERSION = '2.0';
-const AGE_GROUPS = [['u5', '0–5 yrs'], ['c6', '6–12 yrs'], ['c13', '13–17 yrs'], ['a18', '18–59 yrs'], ['e60', '60+ yrs']];
+const APP_VERSION = '3.0';
+const AGE_GROUPS = [['u5', '0–5 yrs'], ['c6', '6–12 yrs'], ['c13', '13–17 yrs'], ['e60', '60+ yrs']];
 const BLOCK_TONES = ['green', 'blue', 'purple', 'orange', 'pink', 'teal', 'red', 'indigo'];
 
 // ---------------- small helpers ----------------
@@ -34,7 +34,9 @@ const S = {
   settings: null,
   lastRoute: '',
 };
-const isAdmin = () => S.user && S.user.role === 'admin';
+const isAdmin = () => !!S.user && (S.user.role === 'admin' || S.user.role === 'master');
+const isMaster = () => !!S.user && S.user.role === 'master';
+const roleName = (r) => (r === 'master' ? 'Master Admin' : r === 'admin' ? 'Admin' : 'User');
 
 // ---------------- API ----------------
 async function api(action, body = {}) {
@@ -85,6 +87,7 @@ function describe(f) {
   if (f.age) p.push(f.age === 'e60' ? 'Elderly 60+' : f.age === 'a18' ? 'Adults 18–59' : 'Children ' + ageLabel(f.age));
   if (f.relation) p.push('Relation ' + f.relation);
   if (f.majhi) p.push('Majhi ' + f.majhi);
+  if (f.fcn) p.push('Family FCN ' + f.fcn);
   if (f.q) p.push(`Search "${f.q}"`);
   return p.length ? p.join(' · ') : 'All records';
 }
@@ -145,7 +148,7 @@ function busyBtn(btn, busy, text) {
 }
 
 // ---------------- routing ----------------
-const ROOT = { home: 'home', camp: 'camp', records: 'records', record: 'records', family: 'records', edit: 'records', new: 'records', reports: 'reports', messages: 'messages', users: 'users', settings: 'settings', more: 'settings', import: 'settings', password: 'settings' };
+const ROOT = { home: 'home', camp: 'camp', records: 'records', record: 'records', family: 'records', edit: 'records', new: 'records', reports: 'reports', messages: 'messages', site: 'site', users: 'site', import: 'site', settings: 'site', more: 'site', password: 'home' };
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const i = h.indexOf('/');
@@ -167,13 +170,14 @@ function render() {
   window.scrollTo(0, 0);
   closeDrawer();
   closePopover();
-  const pages = { home: pageHome, camp: pageCamp, records: pageRecords, record: pageDetail, family: pageFamily, edit: pageEdit, new: pageEdit, reports: pageReports, messages: pageMessages, users: pageUsers, settings: pageSettings, more: pageSettings, import: pageImport, password: pagePassword };
+  closeCampPanel();
+  const pages = { home: pageHome, camp: pageCamp, records: pageRecords, record: pageDetail, family: pageFamily, edit: pageEdit, new: pageEdit, reports: pageReports, messages: pageMessages, site: pageSite, settings: pageSite, more: pageSite, users: pageUsers, import: pageImport, password: pagePassword };
   S.lastRoute = r.name;
   (pages[r.name] || pageHome)(main, r.arg);
 }
 
 // ---------------- shell (side menu on PC, drawer on phone) ----------------
-const NAV = [['home', 'Dashboard', 'Dashboard'], ['camp', 'Camp Profile', 'AccountBox'], ['records', 'Records', 'Storage'], ['reports', 'Reports', 'BarChart'], ['messages', 'Messages', 'MailOutline'], ['users', 'Users', 'PeopleOutline', true], ['settings', 'Settings', 'Settings']];
+const NAV = [['home', 'Dashboard', 'Dashboard'], ['camp', 'Camp Profile', 'AccountBox'], ['records', 'FDMN Records', 'Storage'], ['reports', 'Reports', 'BarChart'], ['messages', 'Messages', 'MailOutline'], ['site', 'Site Update', 'Settings', true]];
 function ensureShell() {
   if ($('#main')) return;
   $('#app').innerHTML = `
@@ -191,11 +195,11 @@ function ensureShell() {
       </div>
       <div class="menu-items" id="menuItems"></div>
       <div class="who-space"></div>
-      <div class="who" id="who" title="Settings"></div>
+      <div class="who" id="who" title="My profile"></div>
     </aside>
     <main class="main" id="main"></main>`;
   $('#scrim').onclick = closeDrawer;
-  $('#who').onclick = () => go('settings');
+  $('#who').onclick = () => { closeDrawer(); openProfile(); };
   $('#main').addEventListener('click', (e) => {
     if (e.target.closest('[data-back]')) back(ROOT[route().name]);
     else if (e.target.closest('[data-menu-open]')) openDrawer();
@@ -207,7 +211,7 @@ function updateNav(active) {
   const box = $('#menuItems');
   if (!box) return;
   const st = S.stats || {};
-  const counts = { messages: isAdmin() ? st.open_messages : st.unread_replies, users: isAdmin() ? st.pending_users : 0 };
+  const counts = { messages: isAdmin() ? st.open_messages : st.unread_replies, site: isAdmin() ? st.pending_users : 0 };
   const cur = active || (box.querySelector('.on') || {}).dataset?.nav;
   box.innerHTML = NAV.filter((n) => !n[3] || isAdmin()).map(([k, label, icon]) => {
     const n = counts[k] || 0;
@@ -215,7 +219,7 @@ function updateNav(active) {
   }).join('');
   $$('[data-nav]', box).forEach((b) => { b.onclick = () => { closeDrawer(); go(b.dataset.nav); }; });
   const who = $('#who');
-  if (who && S.user) who.innerHTML = `${ic('AccountCircle')}<div style="min-width:0"><b>${esc(S.user.name)}</b><small>${isAdmin() ? 'Admin' : 'Viewer'}</small><small>${esc(S.user.email)}</small></div>`;
+  if (who && S.user) who.innerHTML = `${ic('AccountCircle')}<div style="min-width:0"><b>${esc(S.user.name)}</b><small>${roleName(S.user.role)}</small><small>${esc(S.user.email)}</small></div>`;
   const bell = $('#bellDot');
   if (bell) { const n = bellCount(); bell.textContent = n > 99 ? '99+' : n; bell.classList.toggle('hidden', !n); }
 }
@@ -259,27 +263,67 @@ async function openBell(anchor) {
 }
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-function openCalendar(anchor) {
-  const today = new Date();
-  let y = today.getFullYear(), m = today.getMonth();
-  const draw = (p) => {
-    const first = new Date(y, m, 1).getDay();
-    const days = new Date(y, m + 1, 0).getDate();
-    let cells = '';
-    for (let i = 0; i < first; i++) cells += '<td></td>';
-    for (let d = 1; d <= days; d++) {
-      const wd = (first + d - 1) % 7;
-      const isToday = d === today.getDate() && m === today.getMonth() && y === today.getFullYear();
-      cells += `<td class="${isToday ? 'today' : ''} ${wd === 5 ? 'fri' : ''}"><span>${d}</span></td>`;
-      if (wd === 6 && d < days) cells += '</tr><tr>';
-    }
-    p.innerHTML = `<div class="cal"><div class="head"><button data-m="-1" aria-label="Previous month">${ic('ChevronLeft')}</button><b>${MONTHS_LONG[m]} ${y}</b><button data-m="1" aria-label="Next month">${ic('ChevronRight')}</button></div>
-      <table><thead><tr>${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<th>${d}</th>`).join('')}</tr></thead><tbody><tr>${cells}</tr></tbody></table>
-      <button class="btn outline small todaybtn" data-today>Today: ${today.getDate()} ${MONTHS_LONG[today.getMonth()]} ${today.getFullYear()}</button></div>`;
-    $$('[data-m]', p).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); m += +b.dataset.m; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } draw(p); }; });
-    $('[data-today]', p).onclick = (e) => { e.stopPropagation(); y = today.getFullYear(); m = today.getMonth(); draw(p); };
-  };
-  openPopover(anchor, '', draw);
+
+// ---------------- my profile (pop-up from the name box) ----------------
+function openProfile() {
+  const u = S.user;
+  modal(`<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div class="tile t-green" style="border-radius:50%;width:56px;height:56px">${esc((u.name || '?').slice(0, 1).toUpperCase())}</div>
+      <div style="min-width:0"><div style="font-size:18px;font-weight:800">${esc(u.name)}</div><div class="muted" style="font-size:13px;word-break:break-all">${esc(u.email)}</div>
+      <span class="tag" style="margin-top:4px;${isAdmin() ? '--c:#C27410' : ''}">${u.role === 'master' ? '👑 ' : ''}${roleName(u.role)}</span></div></div>
+    <div class="card menu" style="box-shadow:none;border:1px solid #E6EFEB">
+      <div class="menuitem t-green" data-p="info"><div class="tile">${ic('Edit')}</div><span class="grow">Update Information</span>${ic('KeyboardArrowRight')}</div>
+      <div class="menuitem t-blue" data-p="pw"><div class="tile">${ic('Lock')}</div><span class="grow">Reset Password</span>${ic('KeyboardArrowRight')}</div>
+      ${u.role !== 'master' ? `<div class="menuitem t-red" data-p="del"><div class="tile">${ic('Delete')}</div><span class="grow" style="color:var(--danger)">Delete Account</span>${ic('KeyboardArrowRight')}</div>` : ''}
+      <div class="menuitem t-orange" data-p="out"><div class="tile">${ic('Logout')}</div><span class="grow">Sign out</span>${ic('KeyboardArrowRight')}</div>
+    </div>
+    <div class="actions"><button class="btn ghost" data-close>Close</button></div>`, (m, close) => {
+    $('[data-close]', m).onclick = close;
+    $$('[data-p]', m).forEach((el) => {
+      el.onclick = async () => {
+        const k = el.dataset.p;
+        close();
+        if (k === 'info') editMyInfo();
+        else if (k === 'pw') go('password');
+        else if (k === 'del') deleteMyAccount();
+        else if (k === 'out' && (await confirmBox('Sign out?', 'You will need your email and password to sign in again.', 'Sign out'))) signOut();
+      };
+    });
+  });
+}
+function editMyInfo() {
+  const u = S.user;
+  modal(`<h3>Update Information</h3><form id="meForm">
+    <label class="field"><span>Full name</span><input class="input" name="name" value="${esc(u.name)}" required></label>
+    <label class="field"><span>Email</span><input class="input" name="email" type="email" value="${esc(u.email)}" required></label>
+    <div class="err" id="meErr"></div>
+    <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn" type="submit">${ic('Save')} Save</button></div></form>`, (m, close) => {
+    $('[data-cancel]', m).onclick = close;
+    $('#meForm', m).onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('button[type=submit]', m); busyBtn(btn, true);
+      try {
+        const r = await api('me_update', Object.fromEntries(new FormData(e.target)));
+        S.user = r.user; store.set('fdmn_user', JSON.stringify(r.user)); store.set('fdmn_email', r.user.email);
+        close(); toast(r.message); updateNav();
+      } catch (ex) { $('#meErr', m).textContent = ex.message; busyBtn(btn, false); }
+    };
+  });
+}
+function deleteMyAccount() {
+  modal(`<h3 style="color:var(--danger)">Delete my account</h3><p>Your account will be deleted permanently and you will be signed out. Records you added stay in the database.</p>
+    <label class="field"><span>Enter your password to confirm</span><input class="input" type="password" id="delPw" autocomplete="current-password"></label>
+    <div class="err" id="delErr"></div>
+    <div class="actions"><button class="btn ghost" data-cancel>Cancel</button><button class="btn danger" data-del>${ic('Delete')} Delete my account</button></div>`, (m, close) => {
+    $('[data-cancel]', m).onclick = close;
+    $('[data-del]', m).onclick = async (e) => {
+      const pw = $('#delPw', m).value;
+      if (!pw) { $('#delErr', m).textContent = 'Please enter your password.'; return; }
+      busyBtn(e.currentTarget, true);
+      try { await api('delete_me', { password: pw }); close(); signOut(false); toast('Your account was deleted.'); }
+      catch (ex) { $('#delErr', m).textContent = ex.message; busyBtn(e.currentTarget, false); }
+    };
+  });
 }
 
 // ---------------- sign in / register ----------------
@@ -353,7 +397,6 @@ function signedIn(token, user) {
   loadMeta().then(() => { if (route().name === 'home') render(); });
   loadStats().then(() => { if (route().name === 'home') render(); });
   loadSettings().then(() => { if (route().name === 'home') render(); });
-  showWelcome();
 }
 function signOut(callServer = true) {
   if (callServer && S.token) api('logout').catch(() => {});
@@ -361,27 +404,6 @@ function signOut(callServer = true) {
   store.set('fdmn_token', ''); store.set('fdmn_user', '');
   $('#app').innerHTML = '';
   renderAuth();
-}
-
-// ---------------- welcome popup (5 seconds, X to close) ----------------
-function welcomeCard() {
-  const u = S.user;
-  return `<div class="bigcard welcomecard">${bigWave('49D17D')}
-    <div class="avatar"><div class="circle">${ic('Person')}</div><div class="role">${isAdmin() ? '👑 Admin' : '👤 Viewer'}</div></div>
-    <div class="vline"></div>
-    <div style="flex:1;min-width:0"><h3>Welcome, ${esc(u.name)}</h3><p>${isAdmin() ? 'Admin · You can add, edit and delete records.' : 'Viewer · You can search and view records.'}</p></div>
-  </div>`;
-}
-function showWelcome() {
-  if (!S.user || $('.welcome-pop')) return;
-  const bg = document.createElement('div');
-  bg.className = 'modal-bg';
-  bg.innerHTML = `<div class="welcome-pop"><button class="x" aria-label="Close">${ic('Close')}</button>${welcomeCard()}</div>`;
-  document.body.appendChild(bg);
-  const close = () => bg.remove();
-  $('.x', bg).onclick = close;
-  bg.onclick = (e) => { if (e.target === bg) close(); };
-  setTimeout(close, 5000);
 }
 
 // ---------------- DASHBOARD ----------------
@@ -398,12 +420,21 @@ function donut(parts, total) {
   return `<svg viewBox="0 0 190 190"><circle r="${r}" cx="95" cy="95" fill="none" stroke="#EEF3F1" stroke-width="36"/>${segs}<circle r="52" cx="95" cy="95" fill="#fff"/></svg>`;
 }
 const CONTACT_ICON = { fire: 'FireTruck', police: 'LocalPolice', hospital: 'LocalHospital', site: 'Engineering', other: 'Phone' };
-function campInfoHtml(ci) {
-  const tile = (tone, icon, label, val) => `<div class="info t-${tone}">${ic(icon)}<div><small>${label}</small><b>${esc(val || '—')}</b></div></div>`;
+function campData() {
+  const st = S.settings || {};
+  return {
+    info: st.camp_info2 || { area: '', projects: '', sectors: '', extra: [] },
+    office: st.office || [], orgs: st.orgs || { items: [] }, services: st.services || { items: [] },
+    map: (st.map && st.map.url) || '', contacts: st.contacts || [],
+  };
+}
+function campInfoHtml() {
+  const d = campData();
+  const tile = (tone, icon, label, val) => `<div class="info t-${tone}">${ic(icon)}<div><small>${esc(label)}</small><b>${esc(val || '—')}</b></div></div>`;
+  const extra = (d.info.extra || []).slice(0, 2).map((x) => tile('indigo', 'Info', x.label, x.value)).join('');
   return `<div class="infogrid">
-    ${tile('green', 'Terrain', 'Camp Area', ci.area)}${tile('blue', 'Groups', 'Total Organisations', ci.organisations)}
-    ${tile('blue', 'Public', 'UN Agencies', ci.un_agencies)}${tile('purple', 'Handshake', "NGO's & INGO's", ci.ngos)}
-    ${tile('pink', 'Settings', 'Total Projects', ci.projects)}${tile('teal', 'Layers', 'Total Sectors', ci.sectors)}</div>`;
+    ${tile('green', 'Terrain', 'Land Area', d.info.area)}${tile('blue', 'Groups', 'Total Organizations', String((d.orgs.items || []).length))}
+    ${tile('pink', 'Settings', 'Total Projects', d.info.projects)}${tile('teal', 'Layers', 'Sectors', d.info.sectors)}${extra}</div>`;
 }
 function contactsHtml(list) {
   if (!list || !list.length) return '<p class="muted">No contacts yet.</p>';
@@ -419,14 +450,12 @@ function pageHome(main) {
   const today = new Date();
   const ages = [
     { k: 'u5', label: '0 – 5 yrs', v: st.under5 || 0 }, { k: 'c6', label: '6 – 12 yrs', v: st.age6to12 || 0 },
-    { k: 'c13', label: '13 – 17 yrs', v: st.age13to17 || 0 }, { k: 'a18', label: '18 – 59 yrs', v: st.age18to59 || 0 },
-    { k: 'e60', label: 'Elderly 60+', v: st.elderly || 0 },
+    { k: 'c13', label: '13 – 17 yrs', v: st.age13to17 || 0 }, { k: 'e60', label: 'Elderly 60+', v: st.elderly || 0 },
   ].map((x) => Object.assign(x, { color: AGE_COLORS[x.k] }));
   const ageTotal = ages.reduce((a, x) => a + x.v, 0);
   const sum = (tone, icon, deco, val, label, sub, link) => `<div class="sum t-${tone}" data-link='${esc(JSON.stringify(link))}'>
     <div class="tile">${ic(icon)}</div><div><div class="val">${fmt(val)}</div><div class="lbl">${label}${sub ? `<br><span style="font-weight:500">${sub}</span>` : ''}</div></div>${ic(deco, 'deco')}</div>`;
-  const ci = (S.settings && S.settings.camp_info) || {};
-  const contacts = (S.settings && S.settings.contacts) || [];
+  const contacts = campData().contacts;
   const blocks = S.meta.blocks.map((mb, i) => `<div class="bcard t-${BLOCK_TONES[i % BLOCK_TONES.length]}" data-link='${esc(JSON.stringify({ main: mb.name }))}'>
       <div class="tile">${esc((mb.name || '?').slice(0, 2))}</div>
       <div><b class="t">Main Block ${esc(mb.name || '(none)')}</b>
@@ -436,11 +465,12 @@ function pageHome(main) {
       ${ic('Terrain', 'deco')}</div>`).join('');
 
   main.innerHTML = `<div class="dash page">
-    <div class="banner">
+    <div class="welcomebar">
       <button class="iconbtn menubtn" data-menu-open title="Menu">${ic('Menu')}</button>
+      <h1>Welcome to Camp- 8 West Information Management System</h1>
       <div class="tools" id="tools">
         <button class="bell" id="bellBtn" title="Notifications">${ic('Notifications')}<i class="dot hidden" id="bellDot"></i></button>
-        <button class="datecard" id="dateBtn" title="Calendar">${ic('CalendarMonth')}<div><b>${today.getDate()} ${MONTHS_LONG[today.getMonth()].slice(0, 3)} ${today.getFullYear()}</b><small>${DAYS[today.getDay()]} ${ic('KeyboardArrowDown')}</small></div></button>
+        <div class="datecard">${ic('CalendarMonth')}<div><b>${today.getDate()} ${MONTHS_LONG[today.getMonth()].slice(0, 3)} ${today.getFullYear()}</b><small>${DAYS[today.getDay()]}</small></div></div>
       </div>
     </div>
     <div class="sumcards">
@@ -451,12 +481,11 @@ function pageHome(main) {
     </div>
     <div class="dgrid">
       <section class="panel area-info"><div class="ph">${ic('Info')}<h3>Camp Information</h3>${isAdmin() ? `<button class="edit" data-edit-info>${ic('Edit')} Edit</button>` : ''}</div>
-        <div class="pb">${campInfoHtml(ci)}</div></section>
+        <div class="pb">${campInfoHtml()}</div></section>
       <section class="panel area-age"><div class="ph">${ic('People')}<h3>Population by Age Group</h3></div>
         <div class="pb"><div class="agechart">
           <div class="donut">${donut(ages, ageTotal)}<div class="mid"><b>${fmt(tot)}</b><span>People</span></div></div>
           <div class="legend">${ages.map((x) => `<div class="lr" data-link='${esc(JSON.stringify({ age: x.k }))}'><i style="background:${x.color}"></i><span>${x.label}</span><b>${fmt(x.v)}</b><span>(${pct(x.v)})</span></div>`).join('')}
-            ${tot - ageTotal > 0 ? `<div class="lr" data-link='${esc(JSON.stringify({ age: 'nodob' }))}'><i style="background:#B0BEC5"></i><span>No date of birth</span><b>${fmt(tot - ageTotal)}</b><span>(${pct(tot - ageTotal)})</span></div>` : ''}
           </div></div></div></section>
       <section class="panel area-key"><div class="ph">${ic('Assignment')}<h3>Key Summary</h3></div>
         <div class="pb keylist">
@@ -466,7 +495,7 @@ function pageHome(main) {
           <div class="kr">${ic('GridView')}<span>Total Sub-blocks</span><b>${fmt(st.sub_blocks)}</b></div>
         </div></section>
       <section class="panel area-blocks"><div class="ph">${ic('Layers')}<h3>Block-wise Summary</h3></div>
-        <div class="pb">${blocks ? `<div class="bgrid">${blocks}</div>` : emptyBox('No records yet', isAdmin() ? 'Go to Settings → Import from Excel to upload your beneficiary list.' : 'The Admin has not added any records yet.')}</div></section>
+        <div class="pb">${blocks ? `<div class="bgrid">${blocks}</div>` : emptyBox('No records yet', isAdmin() ? 'Go to Site Update → Import from Excel to upload your beneficiary list.' : 'The Admin has not added any records yet.')}</div></section>
       <section class="panel area-emerg"><div class="ph">${ic('NotificationImportant', 'red')}<h3 class="emerg-title">Emergency Response</h3>${isAdmin() ? `<button class="edit" data-edit-contacts>${ic('Edit')} Edit</button>` : ''}</div>
         <div class="pb">${contactsHtml(contacts)}</div></section>
       <section class="panel area-quick"><div class="quick">
@@ -480,9 +509,8 @@ function pageHome(main) {
   </div>`;
   updateNav();
   $('#bellBtn').onclick = (e) => openBell(e.currentTarget);
-  $('#dateBtn').onclick = (e) => openCalendar(e.currentTarget);
   $$('[data-link]', main).forEach((el) => { el.onclick = () => openRecords(JSON.parse(el.dataset.link)); });
-  const ei = $('[data-edit-info]', main); if (ei) ei.onclick = () => editCampInfo();
+  const ei = $('[data-edit-info]', main); if (ei) ei.onclick = () => openCampPanel('info', true);
   const ec = $('[data-edit-contacts]', main); if (ec) ec.onclick = () => editContacts();
   $$('[data-q]', main).forEach((b) => {
     b.onclick = () => {
@@ -502,9 +530,10 @@ function chooseBlocks(kind) {
     <label class="field"><span>Main Block</span><select class="input" id="cbMain"><option value="">All Main Blocks</option>${opts(mainNames())}</select></label>
     <label class="field"><span>Sub-Block</span><select class="input" id="cbSub"><option value="">All Sub-Blocks</option>${opts(subNames(''))}</select></label>
     <label class="field"><span>Age group</span><select class="input" id="cbAge"><option value="">All ages</option>${AGE_GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+    <label class="field"><span>Family (FCN) — optional</span><input class="input" id="cbFcn" inputmode="numeric" placeholder="e.g. 117969 (leave empty for all families)"></label>
     <div class="actions"><button class="btn ghost" data-cancel>Cancel</button>
       ${kind === 'print' ? `<button class="btn" data-go="print">${ic('Print')} Print</button>`
-        : `<button class="btn outline" data-go="pdf">${ic('PictureAsPdf')} PDF</button><button class="btn" data-go="xlsx">${ic('Download')} Excel</button>`}</div>`, (m, close) => {
+        : `<button class="btn outline" data-go="print">${ic('Print')} Print</button><button class="btn outline" data-go="pdf">${ic('PictureAsPdf')} PDF</button><button class="btn" data-go="xlsx">${ic('Download')} Excel</button>`}</div>`, (m, close) => {
     const main = $('#cbMain', m), sub = $('#cbSub', m);
     main.onchange = () => { sub.innerHTML = `<option value="">All Sub-Blocks</option>${opts(subNames(main.value))}`; };
     $('[data-cancel]', m).onclick = close;
@@ -514,6 +543,7 @@ function chooseBlocks(kind) {
         if (main.value) f.main = main.value;
         if (sub.value) f.sub = sub.value;
         if ($('#cbAge', m).value) f.age = $('#cbAge', m).value;
+        if ($('#cbFcn', m).value.trim()) f.fcn = $('#cbFcn', m).value.trim();
         close();
         if (b.dataset.go === 'print') printList(f); else if (b.dataset.go === 'pdf') exportPdf(f); else exportExcel(f);
       };
@@ -521,28 +551,6 @@ function chooseBlocks(kind) {
   });
 }
 
-function editCampInfo() {
-  const ci = Object.assign({}, (S.settings && S.settings.camp_info) || {});
-  const f = (k, label) => `<label class="field"><span>${label}</span><input class="input" name="${k}" value="${esc(ci[k] || '')}"></label>`;
-  modal(`<h3>Edit Camp Information</h3><form id="ciForm">
-    <div class="row2">${f('area', 'Camp Area')}${f('organisations', 'Total Organisations')}</div>
-    <div class="row2">${f('un_agencies', 'UN Agencies')}${f('ngos', "NGO's & INGO's")}</div>
-    <div class="row2">${f('projects', 'Total Projects')}${f('sectors', 'Total Sectors')}</div>
-    <div class="err" id="ciErr"></div>
-    <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn" type="submit">${ic('Save')} Save</button></div></form>`, (m, close) => {
-    $('[data-cancel]', m).onclick = close;
-    $('#ciForm', m).onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = $('button[type=submit]', m);
-      busyBtn(btn, true);
-      try {
-        const r = await api('settings_save', { key: 'camp_info', value: Object.fromEntries(new FormData(e.target)) });
-        S.settings = Object.assign({}, S.settings, { camp_info: r.value });
-        close(); toast('Camp Information saved.'); render();
-      } catch (ex) { $('#ciErr', m).textContent = ex.message; busyBtn(btn, false); }
-    };
-  });
-}
 function contactRow(c) {
   const types = [['fire', 'Fire'], ['police', 'Police'], ['hospital', 'Hospital'], ['site', 'Site / Office'], ['other', 'Other']];
   return `<div class="crow"><select class="input" data-k="type">${types.map(([v, l]) => `<option value="${v}" ${c.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -581,24 +589,121 @@ function openRecords(f) {
   go('records');
 }
 
-// ---------------- CAMP PROFILE ----------------
+// ---------------- CAMP PROFILE (six buttons, floating panel on the right) ----------------
+const CAMP_ITEMS = [
+  ['location', 'Camp Location', 'LocationOn', 'teal'], ['office', 'Office Structure', 'AccountBox', 'purple'],
+  ['info', 'Camp Information', 'Info', 'blue'], ['working', 'Organization Working', 'Handshake', 'orange'],
+  ['services', 'Provided Services', 'Assignment', 'green'], ['orglist', 'Organization List', 'List', 'pink'],
+];
 function pageCamp(main) {
-  const ci = (S.settings && S.settings.camp_info) || {};
   main.innerHTML = topbar('Camp Profile', 'About the Camp, FDMN and Activities') + `
-    <div class="page pad" style="max-width:1100px">
-      <img src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West" style="width:100%;max-width:620px;display:block;margin:4px auto 16px">
-      <div class="settings-grid">
-        <section class="panel"><div class="ph">${ic('Info')}<h3>Camp Information</h3>${isAdmin() ? `<button class="edit" data-edit-info>${ic('Edit')} Edit</button>` : ''}</div><div class="pb">${campInfoHtml(ci)}</div></section>
-        <section class="panel"><div class="ph">${ic('NotificationImportant', 'red')}<h3 class="emerg-title">Emergency Response</h3>${isAdmin() ? `<button class="edit" data-edit-contacts>${ic('Edit')} Edit</button>` : ''}</div><div class="pb">${contactsHtml((S.settings && S.settings.contacts) || [])}</div></section>
-      </div>
-      <div class="wcard t-camp" style="margin-top:14px">${wave()}<div class="in" style="padding:24px;text-align:center">
-        <div class="tile" style="margin:0 auto 12px">${ic('Info')}</div>
-        <h2 style="margin:0 0 6px;color:var(--camp)">Camp- 8 West</h2>
-        <p class="muted" style="margin:0;font-size:16px">Camp information will be added soon.</p>
-      </div></div>
+    <div class="page pad">
+      <img src="assets/logo_full.png" alt="Office of the Camp-in-Charge, Camp-8 West" style="width:100%;max-width:560px;display:block;margin:4px auto 18px">
+      <div class="campbtns">${CAMP_ITEMS.map(([k, t, icon, tone]) => `<button class="campbtn t-${tone}" data-cp="${k}"><span class="tile">${ic(icon)}</span><span>${t}</span>${ic('KeyboardArrowRight')}</button>`).join('')}</div>
+      <section class="panel" style="margin-top:18px"><div class="ph">${ic('NotificationImportant', 'red')}<h3 class="emerg-title">Emergency Response</h3>${isAdmin() ? `<button class="edit" data-edit-contacts>${ic('Edit')} Edit</button>` : ''}</div><div class="pb">${contactsHtml(campData().contacts)}</div></section>
     </div>`;
-  const ei = $('[data-edit-info]', main); if (ei) ei.onclick = () => editCampInfo();
+  $$('[data-cp]', main).forEach((b) => { b.onclick = () => openCampPanel(b.dataset.cp, false); });
   const ec = $('[data-edit-contacts]', main); if (ec) ec.onclick = () => editContacts();
+}
+function closeCampPanel() { $$('.cpanel, .cpanel-bg').forEach((x) => x.remove()); }
+const fmtUpdated = (d) => (d ? new Date(d.replace(' ', 'T')).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not updated yet');
+function openCampPanel(key, edit) {
+  closeCampPanel();
+  const item = CAMP_ITEMS.find((x) => x[0] === key);
+  if (!item) return;
+  const bg = document.createElement('div'); bg.className = 'cpanel-bg';
+  const pn = document.createElement('aside'); pn.className = 'cpanel';
+  document.body.append(bg, pn);
+  bg.onclick = closeCampPanel;
+  const draw = (editing) => {
+    const d = campData();
+    const st = S.stats || {};
+    let body = '', foot = '';
+    const addBtn = `<button class="btn ghost small" data-addrow>${ic('Add')} Add New</button>`;
+    if (key === 'location') {
+      body = d.map ? `<div class="mapbox"><iframe src="${esc(d.map)}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen title="Camp 8W map"></iframe></div>` : emptyBox('No map yet', 'An Admin can add the Google Maps link.');
+      if (editing) body += `<label class="field" style="margin-top:12px"><span>Google Maps "Embed a map" link (you can paste the whole &lt;iframe&gt; code)</span><textarea class="input" id="mapUrl">${esc(d.map)}</textarea></label>`;
+    } else if (key === 'office') {
+      body = editing
+        ? `<div id="rows">${d.office.map((o) => `<div class="erow e3"><input class="input" data-k="designation" placeholder="Designation" value="${esc(o.designation)}"><input class="input" data-k="name" placeholder="Name" value="${esc(o.name)}"><input class="input" data-k="phone" placeholder="Phone" value="${esc(o.phone)}"><button class="iconbtn rm" data-rm title="Remove">${ic('Delete')}</button></div>`).join('')}</div>${addBtn}`
+        : `<div class="office">${d.office.map((o, i) => `<div class="orow"><div class="des ${i === 0 ? 'top' : ''}">${esc(o.designation)}</div><div class="who2"><b>${esc(o.name)}</b>${o.phone ? `<a href="tel:${esc(o.phone.replace(/[^\d+]/g, ''))}">${ic('Phone')} ${esc(o.phone)}</a>` : ''}</div></div>`).join('') || emptyBox('No officers yet', '')}</div>`;
+    } else if (key === 'info') {
+      const auto = [['Total Population', fmt(st.total)], ['Total Family', fmt(st.families)], ['Total Blocks', fmt(st.main_blocks)], ['Sub-Blocks', fmt(st.sub_blocks)], ['Total Organizations', fmt((d.orgs.items || []).length)]];
+      if (editing) {
+        body = `<div class="kvlist">
+          <div class="kvr"><span>Land Area</span><input class="input" id="ciArea" value="${esc(d.info.area)}"></div>
+          ${auto.map(([l, v]) => `<div class="kvr"><span>${l}</span><b class="auto">${v} <small>(automatic)</small></b></div>`).join('')}
+          <div class="kvr"><span>Total Projects</span><input class="input" id="ciProj" value="${esc(d.info.projects)}"></div>
+          <div class="kvr"><span>Sectors</span><input class="input" id="ciSect" value="${esc(d.info.sectors)}"></div></div>
+          <h4 style="margin:14px 0 6px">More rows</h4>
+          <div id="rows">${(d.info.extra || []).map((x) => `<div class="erow e2"><input class="input" data-k="label" placeholder="Title" value="${esc(x.label)}"><input class="input" data-k="value" placeholder="Value" value="${esc(x.value)}"><button class="iconbtn rm" data-rm title="Remove">${ic('Delete')}</button></div>`).join('')}</div>${addBtn}`;
+      } else {
+        const rows = [['Land Area', d.info.area]].concat(auto.slice(0, 4), [auto[4], ['Total Projects', d.info.projects], ['Sectors', d.info.sectors]], (d.info.extra || []).map((x) => [x.label, x.value]));
+        body = `<div class="kvlist">${rows.map(([l, v]) => `<div class="kvr"><span>${esc(l)}</span><b>${esc(v || '—')}</b></div>`).join('')}</div>`;
+      }
+    } else if (key === 'working' || key === 'orglist') {
+      const items = d.orgs.items || [];
+      if (editing) {
+        body = `<div id="rows">${items.map((o) => `<div class="erow ${key === 'working' ? 'e2' : 'e1'}"><input class="input" data-k="name" placeholder="Organization name" value="${esc(o.name)}">${key === 'working' ? `<input class="input" data-k="work" placeholder="Working on (sector / activity)" value="${esc(o.work)}">` : `<input type="hidden" data-k="work" value="${esc(o.work)}">`}<button class="iconbtn rm" data-rm title="Remove">${ic('Delete')}</button></div>`).join('')}</div>${addBtn}`;
+      } else if (key === 'working') {
+        body = `<div class="numlist">${items.map((o, i) => `<div class="nrow"><span class="n">${i + 1}.</span><b>${esc(o.name)}</b><span class="w">${esc(o.work || '—')}</span></div>`).join('')}</div>`;
+      } else {
+        body = `<div class="orggrid">${items.map((o, i) => `<div class="og">${i + 1}. ${esc(o.name)}</div>`).join('')}</div>`;
+      }
+      foot = `<div class="lastupd"><b>Last Updated:</b> ${esc(fmtUpdated(d.orgs.updated))} · ${items.length} organizations</div>`;
+    } else if (key === 'services') {
+      const items = d.services.items || [];
+      body = editing
+        ? `<div id="rows">${items.map((o) => `<div class="erow e2n"><input class="input" data-k="name" placeholder="Service" value="${esc(o.name)}"><input class="input" data-k="count" placeholder="Number" value="${esc(o.count)}"><button class="iconbtn rm" data-rm title="Remove">${ic('Delete')}</button></div>`).join('')}</div>${addBtn}`
+        : `<div class="svclist">${items.map((o, i) => `<div class="svc"><span>${i + 1}. ${esc(o.name)}</span><b>${esc(o.count)}</b></div>`).join('')}</div>`;
+      foot = `<div class="lastupd"><b>Last Updated:</b> ${esc(fmtUpdated(d.services.updated))}</div>`;
+    }
+    pn.className = `cpanel t-${item[3]}${pn.dataset.open ? ' open' : ''}`;
+    pn.innerHTML = `<div class="cph"><span class="tile">${ic(item[2])}</span><h3>${item[1]}</h3>
+        ${isAdmin() && !editing ? `<button class="edit" data-edit>${ic('Edit')} Edit</button>` : ''}
+        <button class="iconbtn" data-x title="Close">${ic('Close')}</button></div>
+      <div class="cpb">${body}${foot}<div class="err" id="cpErr"></div></div>
+      ${editing ? `<div class="cpf"><button class="btn ghost" data-cancel>Cancel</button><button class="btn" data-save>${ic('Save')} Save</button></div>` : ''}`;
+    $('[data-x]', pn).onclick = closeCampPanel;
+    const eb = $('[data-edit]', pn); if (eb) eb.onclick = () => draw(true);
+    const cb = $('[data-cancel]', pn); if (cb) cb.onclick = () => draw(false);
+    const rows = $('#rows', pn);
+    if (rows) {
+      rows.onclick = (e) => { const rm = e.target.closest('[data-rm]'); if (rm) rm.closest('.erow').remove(); };
+      const tpl = rows.querySelector('.erow');
+      $('[data-addrow]', pn).onclick = () => {
+        const cls = key === 'office' ? 'e3' : key === 'services' ? 'e2n' : key === 'info' ? 'e2' : key === 'working' ? 'e2' : 'e1';
+        const fields = key === 'office' ? [['designation', 'Designation'], ['name', 'Name'], ['phone', 'Phone']]
+          : key === 'services' ? [['name', 'Service'], ['count', 'Number']] : key === 'info' ? [['label', 'Title'], ['value', 'Value']]
+          : key === 'working' ? [['name', 'Organization name'], ['work', 'Working on (sector / activity)']] : [['name', 'Organization name']];
+        rows.insertAdjacentHTML('beforeend', `<div class="erow ${cls}">${fields.map(([k, ph]) => `<input class="input" data-k="${k}" placeholder="${ph}">`).join('')}${key === 'orglist' ? '<input type="hidden" data-k="work" value="">' : ''}<button class="iconbtn rm" data-rm title="Remove">${ic('Delete')}</button></div>`);
+        const last = rows.lastElementChild.querySelector('input'); if (last) last.focus();
+        void tpl;
+      };
+    }
+    const sv = $('[data-save]', pn);
+    if (sv) {
+      sv.onclick = async () => {
+        const read = () => $$('.erow', pn).map((r) => { const o = {}; $$('[data-k]', r).forEach((x) => { o[x.dataset.k] = x.value.trim(); }); return o; });
+        let skey, value;
+        if (key === 'location') { skey = 'map'; value = { url: $('#mapUrl', pn).value.trim() }; }
+        else if (key === 'office') { skey = 'office'; value = read(); }
+        else if (key === 'info') { skey = 'camp_info2'; value = { area: $('#ciArea', pn).value, projects: $('#ciProj', pn).value, sectors: $('#ciSect', pn).value, extra: read() }; }
+        else if (key === 'services') { skey = 'services'; value = { items: read() }; }
+        else { skey = 'orgs'; value = { items: read() }; }
+        busyBtn(sv, true);
+        try {
+          const r = await api('settings_save', { key: skey, value });
+          S.settings = Object.assign({}, S.settings, { [skey]: r.value });
+          toast('Saved.');
+          draw(false);
+          if (['home', 'camp'].includes(route().name)) { const keep = key; render(); openCampPanel(keep, false); }
+        } catch (ex) { $('#cpErr', pn).textContent = ex.message; busyBtn(sv, false); }
+      };
+    }
+  };
+  draw(!!edit && isAdmin());
+  requestAnimationFrame(() => { pn.dataset.open = '1'; pn.classList.add('open'); });
 }
 
 // ---------------- RECORDS ----------------
@@ -676,7 +781,7 @@ function pageRecords(main) {
   const R = S.rec, f = R.filters;
   const opt = (v, label, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
   const sel = (key, allLabel, options) => `<select class="input ${f[key] ? 'set' : ''}" data-f="${key}">${opt('', allLabel, f[key] || '')}${options.map(([v, l]) => opt(v, l, f[key] || '')).join('')}</select>`;
-  main.innerHTML = topbar('Records', `${fmt(R.total)} found · ${describe(f)}`, {
+  main.innerHTML = topbar('FDMN Records', `${fmt(R.total)} found · ${describe(f)}`, {
     actions: `<button class="iconbtn" data-xlsx title="Export to Excel">${ic('Download')}</button><button class="iconbtn" data-print title="Print">${ic('Print')}</button>`,
   }) + `
     <div class="page pad">
@@ -1144,7 +1249,7 @@ async function pageReports(main) {
   try { data = await api('report', repMain ? { main: repMain } : {}); } catch (e) { $('#repBox').innerHTML = errorBox(e.message); $('[data-retry]').onclick = () => render(); return; }
   if (route().name !== 'reports') return;
   const lines = reportLines(data);
-  const hasNoDob = lines.some((l) => l.v.nodob);
+  const hasNoDob = false;
   const cols = REP_COLS.concat(hasNoDob ? [['nodob', 'No DOB']] : []);
   const title = 'Camp- 8 West - Block-wise population summary';
   const subtitle = repMain ? 'Main Block ' + repMain : 'All Main Blocks';
@@ -1178,109 +1283,85 @@ async function pageReports(main) {
   });
 }
 
-// ---------------- SETTINGS ----------------
-function pageSettings(main) {
-  const u = S.user;
-  const item = (key, icon, tone, label) => `<div class="menuitem t-${tone}" data-item="${key}"><div class="tile">${ic(icon)}</div><span class="grow">${label}</span>${ic('KeyboardArrowRight')}</div>`;
-  const ci = (S.settings && S.settings.camp_info) || {};
-  const f = (k, label) => `<label class="field"><span>${label}</span><input class="input" name="${k}" value="${esc(ci[k] || '')}"></label>`;
-  main.innerHTML = topbar('Settings', null) + `
-    <div class="page pad"><div class="settings-grid">
-      <div>
-        <div class="wcard t-green">${wave()}<div class="in" style="display:flex;align-items:center;gap:14px;padding:16px">
-          <div class="tile" style="border-radius:50%;width:56px;height:56px">${esc((u.name || '?').slice(0, 1).toUpperCase())}</div>
-          <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">${esc(u.name)}</div><div class="muted" style="font-size:13px">${esc(u.email)}</div>
-            <span class="tag" style="margin-top:6px;${isAdmin() ? '--c:#C27410' : ''}">${isAdmin() ? '👑 Admin' : 'Viewer'}</span></div>
-        </div></div>
-        <div class="card menu" style="margin-top:12px">
-          ${isAdmin() ? item('users', 'PeopleOutline', 'green', 'Manage users') + item('import', 'UploadFile', 'green', 'Import from Excel') : ''}
-          ${item('password', 'Lock', 'green', 'Change password')}
-          ${item('refresh', 'Refresh', 'green', 'Refresh data')}
-          ${item('about', 'Info', 'green', 'About this app')}
-          ${item('signout', 'Logout', 'red', '<span style="color:var(--danger)">Sign out</span>')}
-        </div>
+// ---------------- SITE UPDATE (Admins) ----------------
+function pageSite(main) {
+  if (!isAdmin()) { go('home'); return; }
+  const card = (attr, icon, tone, title, sub, badge) => `<button class="sitecard t-${tone}" ${attr}><span class="tile">${ic(icon)}</span><span class="grow"><b>${title}</b><small>${sub}</small></span>${badge ? `<i class="badge">${badge}</i>` : ''}${ic('KeyboardArrowRight')}</button>`;
+  main.innerHTML = topbar('Site Update', 'Manage users and update the Camp Profile') + `
+    <div class="page pad">
+      <div class="section-title" style="margin-top:4px">${ic('PeopleOutline')}<h2>Users & data</h2><i class="line"></i></div>
+      <div class="sitegrid">
+        ${card('data-go="users"', 'PeopleOutline', 'green', 'Manage Users', 'Master Admin, Admins and Users; approve sign-ups', (S.stats || {}).pending_users)}
+        ${card('data-go="import"', 'UploadFile', 'blue', 'Import from Excel', 'Upload the beneficiary list (.xlsx or .csv)')}
       </div>
-      ${isAdmin() ? `<div>
-        <section class="panel"><div class="ph">${ic('Info')}<h3>Camp Information</h3></div><div class="pb">
-          <form id="setCi"><div class="row2">${f('area', 'Camp Area')}${f('organisations', 'Total Organisations')}</div>
-            <div class="row2">${f('un_agencies', 'UN Agencies')}${f('ngos', "NGO's & INGO's")}</div>
-            <div class="row2">${f('projects', 'Total Projects')}${f('sectors', 'Total Sectors')}</div>
-            <div class="err" id="setCiErr"></div><button class="btn" type="submit">${ic('Save')} Save Camp Information</button></form></div></section>
-        <section class="panel" style="margin-top:14px"><div class="ph">${ic('ContactPhone')}<h3>Emergency Contacts</h3></div><div class="pb">
-          <div id="setC">${((S.settings && S.settings.contacts) || []).map(contactRow).join('')}</div>
-          <button class="btn ghost small" data-addc>${ic('Add')} Add contact</button>
-          <div class="err" id="setCErr"></div><button class="btn" data-savec>${ic('Save')} Save contacts</button></div></section>
-      </div>` : ''}
-    </div></div>`;
-  $$('[data-item]', main).forEach((el) => {
-    el.onclick = async () => {
-      const k = el.dataset.item;
-      if (k === 'users' || k === 'import' || k === 'password') go(k);
-      else if (k === 'refresh') { changed(); loadSettings(); toast('Refreshed.'); }
-      else if (k === 'about') modal(`<h3>Camp- 8 West</h3><p>FDMN Database · Web version ${APP_VERSION}</p><p class="muted">Beneficiary records for Camp-8W, organised by Main Block and Sub-Block. Data is stored securely on app.informationplant.com and is only visible to approved users. The same data is used by the Android app.</p><div class="actions"><button class="btn" data-ok>OK</button></div>`, (m, close) => { $('[data-ok]', m).onclick = close; });
-      else if (k === 'signout') { if (await confirmBox('Sign out?', 'You will need your email and password to sign in again.', 'Sign out')) signOut(); }
-    };
-  });
-  const form = $('#setCi', main);
-  if (form) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = $('button[type=submit]', form); busyBtn(btn, true);
-      try { const r = await api('settings_save', { key: 'camp_info', value: Object.fromEntries(new FormData(form)) }); S.settings = Object.assign({}, S.settings, { camp_info: r.value }); toast('Camp Information saved.'); }
-      catch (ex) { $('#setCiErr').textContent = ex.message; }
-      busyBtn(btn, false);
-    };
-    const box = $('#setC', main);
-    bindContactEditor(box);
-    $('[data-addc]', main).onclick = () => box.insertAdjacentHTML('beforeend', contactRow({ type: 'other' }));
-    $('[data-savec]', main).onclick = async (e) => {
-      const btn = e.currentTarget; busyBtn(btn, true);
-      try { const r = await api('settings_save', { key: 'contacts', value: readContacts(box) }); S.settings = Object.assign({}, S.settings, { contacts: r.value }); toast('Emergency contacts saved.'); }
-      catch (ex) { $('#setCErr').textContent = ex.message; }
-      busyBtn(btn, false);
-    };
-  }
+      <div class="section-title">${ic('AccountBox')}<h2>Camp Profile</h2><i class="line"></i></div>
+      <div class="sitegrid">
+        ${CAMP_ITEMS.filter((x) => x[0] !== 'orglist').map(([k, t, icon, tone]) => card(`data-cp="${k}"`, icon, tone, t, k === 'location' ? 'Google Map link' : k === 'info' ? 'Land area, projects, sectors, more rows' : k === 'working' ? 'Organizations and what they work on' : k === 'office' ? 'Designation, name and phone' : 'Services and numbers')).join('')}
+        ${card('data-contacts', 'NotificationImportant', 'red', 'Emergency Contacts', 'Fire, police, hospital, site management')}
+      </div>
+    </div>`;
+  $$('[data-go]', main).forEach((b) => { b.onclick = () => go(b.dataset.go); });
+  $$('[data-cp]', main).forEach((b) => { b.onclick = () => openCampPanel(b.dataset.cp, true); });
+  $('[data-contacts]', main).onclick = () => editContacts();
 }
 
-// ---------------- USERS (admin) ----------------
-let userFilter = '';
+// ---------------- MANAGE USERS (Master Admin and Admins) ----------------
+let userFilter = 'active';
+let userSearch = '';
+function canManage(u) {
+  const me = S.user;
+  if (!me || u.id === me.id || u.role === 'master') return false;
+  if (me.role === 'master') return true;
+  return me.role === 'admin' && u.role === 'viewer';
+}
 async function pageUsers(main) {
-  if (!isAdmin()) { go('settings'); return; }
-  main.innerHTML = topbar('Manage users', '', { back: true }) + `<div class="page pad"><div id="uChips" class="chips"></div><div id="uList">${loading()}</div></div>`;
-  let list;
-  try { list = (await api('users')).users || []; loadStats(); } catch (e) { $('#uList').innerHTML = errorBox(e.message); $('[data-retry]').onclick = () => render(); return; }
+  if (!isAdmin()) { go('home'); return; }
+  main.innerHTML = topbar('Manage Users', '', { back: true }) + `<div class="page pad">
+    <div class="toolbar" style="margin-bottom:10px">
+      <div id="uChips" class="chips" style="margin:0"></div><span style="flex:1"></span>
+      <label class="search" style="flex:0 1 340px">${ic('Search')}<input class="input" id="uSearch" type="search" placeholder="Search user by name or email…" value="${esc(userSearch)}"></label>
+      <button class="btn small" data-adduser>${ic('Add')} Add User</button>
+    </div>
+    <div id="uList">${loading()}</div></div>`;
+  let data;
+  try { data = await api('users'); loadStats(); } catch (e) { $('#uList').innerHTML = errorBox(e.message); $('[data-retry]').onclick = () => render(); return; }
   if (route().name !== 'users') return;
-  if (!userFilter) userFilter = list.some((u) => u.status === 'pending') ? 'pending' : 'active';
+  const list = data.users || [];
+  if (list.some((u) => u.status === 'pending') && !S.usersVisited) userFilter = 'pending';
+  S.usersVisited = true;
   $('#topSub').textContent = list.length + ' users';
+  $('[data-adduser]', main).onclick = () => addUser(data.has_master);
   const draw = () => {
     const cnt = (k) => (k === 'all' ? list.length : list.filter((u) => u.status === k).length);
     $('#uChips').innerHTML = [['pending', 'Waiting'], ['active', 'Active'], ['blocked', 'Blocked'], ['all', 'All']]
       .map(([k, l]) => `<button class="chip ${userFilter === k ? 'on' : ''}" data-uf="${k}">${l} (${cnt(k)})</button>`).join('');
     $$('[data-uf]').forEach((c) => { c.onclick = () => { userFilter = c.dataset.uf; draw(); }; });
-    const shown = userFilter === 'all' ? list : list.filter((u) => u.status === userFilter);
-    const box = $('#uList');
-    if (!shown.length) { box.innerHTML = emptyBox('Nobody here', userFilter === 'pending' ? 'No new sign-ups are waiting for approval.' : 'No users in this list.'); return; }
-    const me = S.user.id;
+    const q = userSearch.toLowerCase();
+    const shown = list.filter((u) => (userFilter === 'all' || u.status === userFilter) && (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
     const stTag = (s) => s === 'pending' ? '<span class="tag" style="--c:#D32F2F">Waiting</span>' : s === 'blocked' ? '<span class="tag" style="--c:#777">Blocked</span>' : '<span class="tag" style="--c:#2E7D32">Active</span>';
-    box.innerHTML = `<div class="stack cols">${shown.map((u) => `
-      <div class="card"><div style="display:flex;gap:10px;align-items:flex-start">
-        <div style="flex:1;min-width:0"><b>${esc(u.name)}${u.id === me ? ' (You)' : ''}</b><div class="muted" style="font-size:13px;word-break:break-all">${esc(u.email)}</div>
-          <div style="display:flex;gap:6px;margin-top:6px">${u.role === 'admin' ? '<span class="tag" style="--c:#C27410">Admin</span>' : '<span class="tag">Viewer</span>'}${stTag(u.status)}</div>
-          <div class="muted" style="font-size:11.5px;margin-top:5px">Joined ${esc((u.created_at || '').slice(0, 10))}${u.last_login ? ' · Last sign-in ' + esc(u.last_login.slice(0, 16)) : ''}</div></div>
-        ${u.id !== me ? `<div class="dropdown"><button class="iconbtn" style="color:var(--muted)" data-menu="${u.id}">${ic('MoreVert')}</button></div>` : ''}
-      </div>
-      ${u.status === 'pending' ? `<div class="btnrow" style="margin-top:10px"><button class="btn small" data-act="approve" data-u="${u.id}">Approve</button><button class="btn ghost small" style="color:var(--danger)" data-act="delete" data-u="${u.id}">Reject</button></div>` : ''}
-      </div>`).join('')}</div>`;
-    $$('[data-act]', box).forEach((b) => { b.onclick = () => userAction(b.dataset.act, list.find((u) => u.id === +b.dataset.u)); });
-    $$('[data-menu]', box).forEach((b) => {
+    const ucard = (u) => `<div class="ucard"><div style="flex:1;min-width:0">
+        <b>${esc(u.name)}${u.id === S.user.id ? ' (You)' : ''}</b><div class="muted" style="font-size:13px;word-break:break-all">${esc(u.email)}</div>
+        <div style="display:flex;gap:6px;margin-top:5px">${stTag(u.status)}</div>
+        <div class="muted" style="font-size:11.5px;margin-top:4px">Joined ${esc((u.created_at || '').slice(0, 10))}${u.last_login ? ' · Last login ' + esc(u.last_login.slice(0, 16)) : ''}</div></div>
+      ${canManage(u) ? `<div class="dropdown"><button class="btn small" data-menu="${u.id}">Update ${ic('KeyboardArrowDown')}</button></div>` : ''}</div>
+      ${u.status === 'pending' && canManage(u) ? `<div class="btnrow" style="margin:-4px 0 6px"><button class="btn small" data-act="approve" data-u="${u.id}">Approve</button><button class="btn ghost small" style="color:var(--danger)" data-act="delete" data-u="${u.id}">Reject</button></div>` : ''}`;
+    const col = (role, title, tone) => {
+      const us = shown.filter((u) => u.role === role);
+      return `<div class="ucol"><div class="uhead t-${tone}">${title} <span>${us.length}</span></div>${us.map(ucard).join('') || '<p class="muted" style="padding:6px 4px">Nobody here.</p>'}</div>`;
+    };
+    $('#uList').innerHTML = `<div class="ucols">${col('master', 'Master Admin', 'indigo')}${col('admin', 'Admin', 'blue')}${col('viewer', 'User', 'purple')}</div>`;
+    $$('[data-act]').forEach((b) => { b.onclick = () => userAction(b.dataset.act, list.find((u) => u.id === +b.dataset.u)); });
+    $$('[data-menu]').forEach((b) => {
       b.onclick = (e) => {
         e.stopPropagation();
         $$('.dropdown .list').forEach((l) => l.remove());
         const u = list.find((x) => x.id === +b.dataset.menu);
-        const opts = [];
-        if (u.status === 'blocked') opts.push(['unblock', 'Unblock']); else if (u.status === 'active') opts.push(['block', 'Block']);
-        opts.push(u.role === 'admin' ? ['viewer', 'Make Viewer'] : ['admin', 'Make Admin']);
-        opts.push(['reset', 'Reset password'], ['delete', 'Delete user']);
+        const opts = [['info', 'Update Information'], ['reset', 'Reset Password']];
+        if (u.status === 'pending') opts.push(['approve', 'Approve']);
+        if (u.status === 'blocked') opts.push(['unblock', u.role === 'admin' ? 'Unblock Admin' : 'Unblock User']);
+        else if (u.status === 'active') opts.push(['block', u.role === 'admin' ? 'Block Admin' : 'Block User']);
+        if (isMaster()) opts.push(u.role === 'admin' ? ['viewer', 'Change to User'] : ['admin', 'Make Admin']);
+        opts.push(['delete', 'Delete Account']);
         const l = document.createElement('div'); l.className = 'list';
         l.innerHTML = opts.map(([k, t]) => `<button class="${k === 'delete' ? 'danger' : ''}" data-o="${k}">${t}</button>`).join('');
         b.parentElement.appendChild(l);
@@ -1289,20 +1370,54 @@ async function pageUsers(main) {
       };
     });
   };
+  $('#uSearch', main).oninput = (e) => { userSearch = e.target.value.trim(); draw(); };
   draw();
+}
+function addUser(hasMaster) {
+  const roles = [['viewer', 'User (Viewer)']].concat(isMaster() ? [['admin', 'Admin']] : [], !hasMaster ? [['master', 'Master Admin']] : []);
+  modal(`<h3>Add User</h3><form id="auForm">
+    <label class="field"><span>Full name</span><input class="input" name="name" required></label>
+    <label class="field"><span>Email</span><input class="input" name="email" type="email" required></label>
+    <label class="field"><span>Password (min 6)</span><input class="input" name="password" type="text" autocomplete="off" required></label>
+    <label class="field"><span>Role</span><select class="input" name="role">${roles.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+    ${!hasMaster ? '<p class="muted" style="font-size:13px;margin-top:-4px">There is no Master Admin yet. You can create the one Master Admin account here; after that this choice disappears.</p>' : ''}
+    <div class="err" id="auErr"></div>
+    <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn" type="submit">${ic('Add')} Add User</button></div></form>`, (m, close) => {
+    $('[data-cancel]', m).onclick = close;
+    $('#auForm', m).onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('button[type=submit]', m); busyBtn(btn, true);
+      try { const r = await api('user_add', Object.fromEntries(new FormData(e.target))); close(); toast(r.message); render(); }
+      catch (ex) { $('#auErr', m).textContent = ex.message; busyBtn(btn, false); }
+    };
+  });
 }
 async function userAction(act, u) {
   if (!u) return;
   const set = async (body, msg) => { try { await api('user_set', Object.assign({ id: u.id }, body)); toast(msg); render(); } catch (e) { toast(e.message); } };
+  const who = u.role === 'admin' ? 'Admin' : 'User';
   if (act === 'approve') set({ status: 'active' }, `${u.name} approved.`);
   else if (act === 'unblock') set({ status: 'active' }, `${u.name} unblocked.`);
-  else if (act === 'block') { if (await confirmBox('Please confirm', `Block ${u.name}? They will not be able to sign in.`, 'Block')) set({ status: 'blocked' }, `${u.name} blocked.`); }
-  else if (act === 'admin') { if (await confirmBox('Please confirm', `Make ${u.name} an Admin? Admins can add, edit and delete all records and manage users.`, 'Make Admin')) set({ role: 'admin' }, `${u.name} is now an Admin.`); }
-  else if (act === 'viewer') { if (await confirmBox('Please confirm', `Change ${u.name} to Viewer? They will only be able to view records.`, 'Make Viewer')) set({ role: 'viewer' }, `${u.name} is now a Viewer.`); }
+  else if (act === 'block') { if (await confirmBox('Please confirm', `Block ${u.name}? They will not be able to sign in.`, 'Block ' + who)) set({ status: 'blocked' }, `${u.name} blocked.`); }
+  else if (act === 'admin') { if (await confirmBox('Please confirm', `Make ${u.name} an Admin? Admins can add, edit and delete records and manage Users.`, 'Make Admin')) set({ role: 'admin' }, `${u.name} is now an Admin.`); }
+  else if (act === 'viewer') { if (await confirmBox('Please confirm', `Change ${u.name} to User (Viewer)? They will only be able to view records.`, 'Change to User')) set({ role: 'viewer' }, `${u.name} is now a User.`); }
   else if (act === 'delete') {
     if (await confirmBox('Please confirm', `Delete ${u.name}'s account permanently?`, 'Delete', true)) {
-      try { await api('user_delete', { id: u.id }); toast('User deleted.'); render(); } catch (e) { toast(e.message); }
+      try { await api('user_delete', { id: u.id }); toast('Account deleted.'); render(); } catch (e) { toast(e.message); }
     }
+  } else if (act === 'info') {
+    modal(`<h3>Update Information</h3><form id="uiForm">
+      <label class="field"><span>Full name</span><input class="input" name="name" value="${esc(u.name)}" required></label>
+      <label class="field"><span>Email</span><input class="input" name="email" type="email" value="${esc(u.email)}" required></label>
+      <div class="err" id="uiErr"></div>
+      <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn" type="submit">${ic('Save')} Save</button></div></form>`, (m, close) => {
+      $('[data-cancel]', m).onclick = close;
+      $('#uiForm', m).onsubmit = async (e) => {
+        e.preventDefault();
+        try { await api('user_set', Object.assign({ id: u.id }, Object.fromEntries(new FormData(e.target)))); close(); toast('Saved.'); render(); }
+        catch (ex) { $('#uiErr', m).textContent = ex.message; }
+      };
+    });
   } else if (act === 'reset') {
     modal(`<h3>Reset password</h3><p>Set a new password for ${esc(u.name)}. Tell them the new password so they can sign in.</p>
       <label class="field"><span>New password (min 6)</span><input class="input" id="npw" type="text" autocomplete="off"></label><div class="err" id="npwErr"></div>
@@ -1319,7 +1434,7 @@ async function userAction(act, u) {
 
 // ---------------- IMPORT (admin) ----------------
 function pageImport(main) {
-  if (!isAdmin()) { go('settings'); return; }
+  if (!isAdmin()) { go('home'); return; }
   const st = { parsed: null, sent: 0, busy: false, done: false, replace: (S.stats || {}).total > 0 };
   main.innerHTML = topbar('Import from Excel', null, { back: true }) + `
     <div class="page pad narrow" style="margin:0 auto">
@@ -1392,7 +1507,7 @@ function pageImport(main) {
 
 // ---------------- CHANGE PASSWORD ----------------
 function pagePassword(main) {
-  main.innerHTML = topbar('Change password', null, { back: true }) + `
+  main.innerHTML = topbar('Reset Password', 'Change your own password', { back: true }) + `
     <div class="page pad narrow" style="margin:0 auto"><form class="card" id="pwForm">
       <label class="field"><span>Current password</span><input class="input" type="password" name="old" autocomplete="current-password" required></label>
       <label class="field"><span>New password (min 6)</span><input class="input" type="password" name="n1" autocomplete="new-password" required></label>
@@ -1408,7 +1523,7 @@ function pagePassword(main) {
     if (f.n1.value !== f.n2.value) { err.textContent = 'The two new passwords do not match.'; return; }
     const btn = $('button[type=submit]', f);
     busyBtn(btn, true);
-    try { await api('change_password', { old: f.old.value, new: f.n1.value }); toast('Password changed.'); back('settings'); }
+    try { await api('change_password', { old: f.old.value, new: f.n1.value }); toast('Password changed.'); back('home'); }
     catch (ex) { err.textContent = ex.message; busyBtn(btn, false); }
   };
 }
@@ -1424,7 +1539,6 @@ function pagePassword(main) {
     splash.remove();
     render();
     if (S.token && S.user) {
-      showWelcome();
       api('me').then((r) => { S.user = r.user; store.set('fdmn_user', JSON.stringify(r.user)); updateNav(); }).catch(() => {});
     }
   });
