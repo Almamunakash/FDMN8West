@@ -1,17 +1,12 @@
 package com.informationplant.fdmn
 
-import androidx.compose.foundation.Image
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Elderly
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,379 +21,428 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ChildCare
-import androidx.compose.material.icons.filled.ChildFriendly
-import androidx.compose.material.icons.filled.EmojiPeople
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.FamilyRestroom
+import androidx.compose.material.icons.filled.FireTruck
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.LocalPolice
 import androidx.compose.material.icons.filled.Man
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.NotificationImportant
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.Woman
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-private val HeaderWave = GenericShape { size, _ ->
-    moveTo(0f, 0f)
-    lineTo(size.width, 0f)
-    lineTo(size.width, size.height * 0.90f)
-    cubicTo(size.width * 0.72f, size.height * 1.02f, size.width * 0.36f, size.height * 0.80f, 0f, size.height * 0.93f)
-    close()
-}
+val WelcomeBlue = Color(0xFF1E40AF)
+private val AgeColors = mapOf("u5" to Color(0xFFA855F7), "c6" to Color(0xFF2196F3), "c13" to Color(0xFF22C4C4), "e60" to Color(0xFFEC4899))
+
+private class InfoItem(val icon: ImageVector, val label: String, val value: String, val tone: Tone)
+private class Notice(val title: String, val sub: String, val toUsers: Boolean)
 
 @Composable
 fun HomeScreen(app: AppCtl) {
-    val user = app.user ?: return
+    app.user ?: return
     LaunchedEffect(app.version) { app.refreshStats() }
     val st = app.stats
-    val meta = app.meta
+    var bell by remember { mutableStateOf(false) }
+    var export by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { Header(onRefresh = { app.refreshStats(); app.refreshMeta() }) }
-        item { CampProfileCard(Modifier.padding(horizontal = 14.dp)) { app.push(Screen.CampProfile) } }
+        item { WelcomeBar(app) { bell = true } }
         item {
+            val pct = { n: Int -> if (st.total > 0) String.format(Locale.US, "%.1f%%", n * 100.0 / st.total) else "0%" }
             Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(Icons.Filled.Groups, ToneGreen, fmt(st.total), "People", Modifier.weight(1f)) { app.openRecords(Filters()) }
-                    StatCard(Icons.Filled.FamilyRestroom, ToneOrange, fmt(st.families), "Families", Modifier.weight(1f), null)
+                    SumCard(Icons.Filled.Groups, ToneGreen, fmt(st.total), "Total Population", null, Modifier.weight(1f)) { app.openRecords(Filters()) }
+                    SumCard(Icons.Filled.FamilyRestroom, ToneOrange, fmt(st.families), "Families", null, Modifier.weight(1f), null)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(Icons.Filled.Man, ToneBlue, fmt(st.male), "Male", Modifier.weight(1f)) { app.openRecords(Filters(sex = "M")) }
-                    StatCard(Icons.Filled.Woman, TonePink, fmt(st.female), "Female", Modifier.weight(1f)) { app.openRecords(Filters(sex = "F")) }
+                    SumCard(Icons.Filled.Man, ToneBlue, fmt(st.male), "Male", "(${pct(st.male)})", Modifier.weight(1f)) { app.openRecords(Filters(sex = "M")) }
+                    SumCard(Icons.Filled.Woman, TonePink, fmt(st.female), "Female", "(${pct(st.female)})", Modifier.weight(1f)) { app.openRecords(Filters(sex = "F")) }
                 }
             }
         }
-        item { Box(Modifier.padding(horizontal = 14.dp)) { SectionTitle(Icons.Filled.Groups, "Age groups") } }
         item {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                val w = Modifier.width(118.dp)
-                ChildCard(Icons.Filled.ChildFriendly, TonePurple, fmt(st.under5), "0–5 yrs", w) { app.openRecords(Filters(age = "u5")) }
-                ChildCard(Icons.Filled.ChildCare, ToneTeal, fmt(st.age6to12), "6–12 yrs", w) { app.openRecords(Filters(age = "c6")) }
-                ChildCard(Icons.Filled.EmojiPeople, ToneIndigo, fmt(st.age13to17), "13–17 yrs", w) { app.openRecords(Filters(age = "c13")) }
-                ChildCard(Icons.Filled.Elderly, ToneRed, fmt(st.elderly), "Elderly 60+", w) { app.openRecords(Filters(age = "e60")) }
-            }
-        }
-        if (user.isAdmin && st.pendingUsers > 0) {
-            item { AlertCard("${st.pendingUsers} new user(s) waiting for your approval") { app.tab(Screen.More); app.push(Screen.Users) } }
-        }
-        if (user.isAdmin && st.openMessages > 0) {
-            item { AlertCard("${st.openMessages} open message request(s)") { app.tab(Screen.Messages) } }
-        }
-        if (!user.isAdmin && st.unreadReplies > 0) {
-            item { AlertCard("The Admin replied to ${st.unreadReplies} of your request(s)") { app.tab(Screen.Messages) } }
-        }
-        item { Box(Modifier.padding(horizontal = 14.dp)) { SectionTitle(Icons.Filled.Layers, "Blocks") } }
-        if (meta.blocks.isEmpty()) {
-            item {
-                EmptyBox(
-                    "No records yet",
-                    if (user.isAdmin) "Go to More → Import from Excel to upload your beneficiary list." else "The Admin has not added any records yet.",
+            val c = app.camp
+            val editInfo: (@Composable () -> Unit)? = if (app.isAdmin) ({ EditChip { app.push(Screen.CampItem("info", true)) } }) else null
+            Panel("Camp Information", Icons.Filled.Info, Modifier.padding(horizontal = 14.dp), action = editInfo) {
+                val tiles = mutableListOf(
+                    InfoItem(Icons.Filled.Terrain, "Land Area", c.area, ToneGreen),
+                    InfoItem(Icons.Filled.Groups, "Total Organizations", c.orgs.size.toString(), ToneBlue),
+                    InfoItem(Icons.Filled.Settings, "Total Projects", c.projects, TonePink),
+                    InfoItem(Icons.Filled.Layers, "Sectors", c.sectors, ToneTeal),
                 )
-            }
-        }
-        itemsIndexed(meta.blocks, key = { _, b -> "m_" + b.name }) { i, mb ->
-            MainBlockCard(app, mb, blockTone(i), Modifier.padding(horizontal = 14.dp))
-        }
-    }
-}
-
-@Composable
-private fun Header(onRefresh: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(270.dp).clip(HeaderWave)) {
-        Image(
-            painterResource(R.drawable.header_bg), contentDescription = null,
-            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.40f),
-                    0.35f to Color.Black.copy(alpha = 0.08f),
-                    1f to Color.Transparent,
-                )
-            )
-        )
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(end = 6.dp, top = 2.dp), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, "Refresh", tint = Color.White, modifier = Modifier.size(28.dp)) }
-            }
-            Box(Modifier.fillMaxWidth().weight(1f).padding(bottom = 34.dp), contentAlignment = Alignment.Center) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color.White.copy(alpha = 0.88f),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.fillMaxWidth(0.86f),
-                ) {
-                    Image(
-                        painterResource(R.drawable.logo_full), contentDescription = "Office of the Camp-in-Charge, Camp-8 West",
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun WelcomeCard(user: User, modifier: Modifier) {
-    Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 6.dp, color = Color.Transparent, modifier = modifier.fillMaxWidth()) {
-        Box(
-            Modifier
-                .background(Brush.linearGradient(listOf(Color(0xFF0A6B4D), Color(0xFF0B5D3B), Color(0xFF138A4E))))
-                .drawBehind {
-                    val w = size.width
-                    val h = size.height
-                    val p = Path().apply {
-                        moveTo(w * 0.35f, h); cubicTo(w * 0.6f, h * 0.95f, w * 0.75f, h * 0.55f, w, h * 0.35f); lineTo(w, h); close()
-                    }
-                    drawPath(p, Brush.horizontalGradient(listOf(Color(0x0049D17D), Color(0x9949D17D)), startX = w * 0.35f, endX = w))
-                }
-                .border(1.5.dp, Color(0xFF49D17D).copy(alpha = 0.5f), RoundedCornerShape(22.dp))
-                .padding(horizontal = 16.dp, vertical = 16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(contentAlignment = Alignment.BottomCenter) {
-                    Box(
-                        Modifier.padding(bottom = 12.dp).size(64.dp).background(Color(0xFF7FE0C0), CircleShape)
-                            .border(3.dp, Color.White, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Filled.Person, null, tint = Color.White, modifier = Modifier.size(42.dp))
-                    }
-                    Surface(shape = RoundedCornerShape(50), color = Color(0xFF2E3B36).copy(alpha = 0.85f), modifier = Modifier.offset(y = 4.dp)) {
-                        Text(
-                            if (user.isAdmin) "👑 Admin" else "👤 Viewer",
-                            color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        )
+                c.extra.take(2).forEach { tiles += InfoItem(Icons.Filled.Info, it["label"].orEmpty(), it["value"].orEmpty(), ToneIndigo) }
+                tiles.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                        pair.forEach { t -> InfoTile(t, Modifier.weight(1f)) }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
-                Spacer(Modifier.width(14.dp))
-                Box(Modifier.width(1.5.dp).height(64.dp).background(Color.White.copy(alpha = 0.7f)))
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Welcome, ${user.name}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        if (user.isAdmin) "Admin · You can add, edit and delete records." else "Viewer · You can search and view records.",
-                        color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp,
-                    )
-                }
             }
         }
-    }
-}
-
-@Composable
-private fun StatCard(icon: ImageVector, tone: Tone, value: String, label: String, modifier: Modifier, onClick: (() -> Unit)?) {
-    WaveCard(tone, modifier, onClick) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconTile(icon, tone, 52.dp, 30.dp)
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(value, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = tone.dark, maxLines = 1)
-                Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChildCard(icon: ImageVector, tone: Tone, value: String, label: String, modifier: Modifier, onClick: () -> Unit) {
-    WaveCard(tone, modifier, onClick) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            IconTile(icon, tone, 42.dp, 24.dp)
-            Spacer(Modifier.height(6.dp))
-            Text(value, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = tone.dark, maxLines = 1)
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-private fun AlertCard(text: String, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),
-    ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Warning, null, tint = Accent)
-            Spacer(Modifier.width(12.dp))
-            Text(text, Modifier.weight(1f), fontWeight = FontWeight.Medium)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
-        }
-    }
-}
-
-@Composable
-private fun MiniStat(icon: ImageVector, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = Color(0xFF3A4743), modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(5.dp))
-        Text(text, fontSize = 14.sp, color = Color(0xFF26322E), maxLines = 1)
-    }
-}
-
-@Composable
-private fun MainBlockCard(app: AppCtl, mb: MainBlock, tone: Tone, modifier: Modifier) {
-    var open by rememberSaveable(mb.name) { mutableStateOf(false) }
-    WaveCard(tone, modifier) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().clickable { open = !open }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LetterTile(mb.name.ifBlank { "?" }.take(2), tone, 54.dp)
-                Spacer(Modifier.width(12.dp))
-                Box(Modifier.width(1.5.dp).height(50.dp).background(tone.light.copy(alpha = 0.6f)))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Main Block ${mb.name.ifBlank { "(none)" }}", fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = Color(0xFF14201C))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        MiniStat(Icons.Filled.Groups, "${fmt(mb.count)} people")
-                        Text("  ·  ", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        MiniStat(Icons.Filled.FamilyRestroom, "${fmt(mb.families)} families")
-                    }
-                    MiniStat(Icons.Filled.Layers, "${mb.subs.size} sub-blocks")
-                }
-                Box(
-                    Modifier.size(40.dp).background(tone.light.copy(alpha = 0.18f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null, tint = tone.dark)
-                }
-            }
-            if (open) {
-                HorizontalDivider(color = tone.light.copy(alpha = 0.3f))
-                SubRow("All of Main Block ${mb.name}", mb.count, mb.families, tone) { app.openRecords(Filters(main = mb.name)) }
-                mb.subs.forEach { sb ->
-                    SubRow("Sub-Block ${sb.name.ifBlank { "(none)" }}", sb.count, sb.families, tone) {
-                        app.openRecords(Filters(main = mb.name, sub = sb.name))
+        item {
+            val ages = listOf(Triple("u5", "0 – 5 yrs", st.under5), Triple("c6", "6 – 12 yrs", st.age6to12), Triple("c13", "13 – 17 yrs", st.age13to17), Triple("e60", "Elderly 60+", st.elderly))
+            val sum = ages.sumOf { it.third }
+            Panel("Population by Age Group", Icons.Filled.People, Modifier.padding(horizontal = 14.dp)) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
+                        Canvas(Modifier.size(180.dp)) {
+                            val stroke = 34.dp.toPx()
+                            val inset = stroke / 2
+                            val arcSize = Size(size.width - stroke, size.height - stroke)
+                            drawArc(Color(0xFFEEF3F1), 0f, 360f, false, topLeft = Offset(inset, inset), size = arcSize, style = Stroke(stroke))
+                            var start = -90f
+                            ages.forEach { (k, _, v) ->
+                                if (sum > 0 && v > 0) {
+                                    val sweep = 360f * v / sum
+                                    drawArc(AgeColors[k] ?: Color.Gray, start, sweep, false, topLeft = Offset(inset, inset), size = arcSize, style = Stroke(stroke))
+                                    start += sweep
+                                }
+                            }
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(fmt(st.total), fontSize = 24.sp, fontWeight = FontWeight.Black)
+                            Text("People", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun SubRow(title: String, count: Int, families: Int, tone: Tone, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(10.dp).shadow(2.dp, CircleShape).background(tone.brush, CircleShape))
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text("${fmt(count)} people · ${fmt(families)} families", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = tone.dark)
-    }
-}
-
-@Composable
-private fun CampProfileCard(modifier: Modifier, onClick: () -> Unit) {
-    val blue = Color(0xFF3354BD)
-    Surface(
-        shape = RoundedCornerShape(22.dp), shadowElevation = 6.dp, color = Color.Transparent,
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).clickable(onClick = onClick),
-    ) {
-        Box(
-            Modifier
-                .background(Brush.linearGradient(listOf(Color(0xFF2A47A8), blue, Color(0xFF4F74E0))))
-                .drawBehind {
-                    val w = size.width
-                    val h = size.height
-                    val p = Path().apply {
-                        moveTo(w * 0.35f, h); cubicTo(w * 0.6f, h * 0.95f, w * 0.75f, h * 0.55f, w, h * 0.35f); lineTo(w, h); close()
+                ages.forEach { (k, label, v) ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { app.openRecords(Filters(age = k)) }.padding(horizontal = 6.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(12.dp).background(AgeColors[k] ?: Color.Gray, CircleShape))
+                        Spacer(Modifier.width(10.dp))
+                        Text(label, Modifier.weight(1f))
+                        Text(fmt(v), fontWeight = FontWeight.ExtraBold)
+                        Text(if (st.total > 0) String.format(Locale.US, "  (%.1f%%)", v * 100.0 / st.total) else "", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
-                    drawPath(p, Brush.horizontalGradient(listOf(Color(0x008FB0FF), Color(0x998FB0FF)), startX = w * 0.35f, endX = w))
                 }
-                .border(1.5.dp, Color(0xFF8FB0FF).copy(alpha = 0.5f), RoundedCornerShape(22.dp))
-                .padding(horizontal = 16.dp, vertical = 18.dp)
-        ) {
+            }
+        }
+        item {
+            Panel("Key Summary", Icons.Filled.Assignment, Modifier.padding(horizontal = 14.dp)) {
+                KeyRow(Icons.Filled.Groups, "Total Population", fmt(st.total))
+                KeyRow(Icons.Filled.FamilyRestroom, "Total Families", fmt(st.families))
+                KeyRow(Icons.Filled.Layers, "Total Blocks", fmt(st.mainBlocks))
+                KeyRow(Icons.Filled.GridView, "Total Sub-blocks", fmt(st.subBlocks), last = true)
+            }
+        }
+        item {
+            Panel("Block-wise Summary", Icons.Filled.Layers, Modifier.padding(horizontal = 14.dp)) {
+                if (app.meta.blocks.isEmpty()) {
+                    EmptyBox("No records yet", if (app.isAdmin) "Go to More → Site Update → Import from Excel." else "The Admin has not added any records yet.")
+                }
+                app.meta.blocks.forEachIndexed { i, mb -> BlockCard(mb, blockTone(i)) { app.openRecords(Filters(main = mb.name)) } }
+            }
+        }
+        item {
+            val editContacts: (@Composable () -> Unit)? = if (app.isAdmin) ({ EditChip { app.push(Screen.Contacts) } }) else null
+            Panel(
+                "Emergency Response", Icons.Filled.NotificationImportant, Modifier.padding(horizontal = 14.dp),
+                iconTint = Color(0xFFD32F2F), titleColor = Color(0xFFD32F2F), action = editContacts,
+            ) { ContactList(app.camp.contacts) }
+        }
+        item {
+            Panel("Quick Actions", Icons.Filled.Bolt, Modifier.padding(horizontal = 14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (app.isAdmin) QuickBtn(Icons.Filled.AddCircle, "Add Record", ToneGreen, Modifier.weight(1f)) { app.push(Screen.Edit(Person())) }
+                    QuickBtn(Icons.Filled.BarChart, "Reports", ToneBlue, Modifier.weight(1f)) { app.tab(Screen.Reports) }
+                    QuickBtn(Icons.Filled.Download, "Export", TonePurple, Modifier.weight(1f)) { export = true }
+                }
+            }
+        }
+    }
+    if (bell) NotificationsDialog(app) { bell = false }
+    if (export) ExportChooser(app) { export = false }
+}
+
+@Composable
+private fun WelcomeBar(app: AppCtl, onBell: () -> Unit) {
+    val today = LocalDate.now()
+    val count = if (app.isAdmin) app.stats.pendingUsers + app.stats.openMessages else app.stats.unreadReplies
+    Surface(color = Color.White, shadowElevation = 2.dp) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(64.dp).background(Color.White, CircleShape).border(3.dp, Color(0xFFBFD0FF), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(painterResource(R.drawable.emblem), contentDescription = null, modifier = Modifier.size(52.dp))
+                Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 3.dp) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CalendarMonth, null, tint = BrandDark, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(today.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(today.format(DateTimeFormatter.ofPattern("EEEE", Locale.ENGLISH)), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
-                Spacer(Modifier.width(14.dp))
-                Box(Modifier.width(1.5.dp).height(56.dp).background(Color.White.copy(alpha = 0.7f)))
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Camp Profile", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text("About the Camp, FDMN and Activities", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp)
+                Spacer(Modifier.weight(1f))
+                Box {
+                    Surface(shape = CircleShape, color = Color.White, shadowElevation = 3.dp, modifier = Modifier.size(50.dp).clip(CircleShape).clickable(onClick = onBell)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Notifications, "Notifications", tint = BrandDark, modifier = Modifier.size(28.dp)) }
+                    }
+                    if (count > 0) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp).size(20.dp).background(Color(0xFFE53935), CircleShape).border(2.dp, Color.White, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(if (count > 99) "99+" else count.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                    }
                 }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White, modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("Welcome to Camp- 8 West Information Management System", color = WelcomeBlue, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 27.sp)
+        }
+    }
+}
+
+@Composable
+private fun SumCard(icon: ImageVector, tone: Tone, value: String, label: String, sub: String?, modifier: Modifier, onClick: (() -> Unit)?) {
+    WaveCard(tone, modifier, onClick) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            IconTile(icon, tone, 48.dp, 28.dp)
+            Spacer(Modifier.height(8.dp))
+            Text(value, fontSize = 23.sp, fontWeight = FontWeight.Black, color = tone.dark, maxLines = 1)
+            Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            if (sub != null) Text(sub, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun InfoTile(t: InfoItem, modifier: Modifier) {
+    Surface(shape = RoundedCornerShape(14.dp), color = t.tone.light.copy(alpha = 0.16f), modifier = modifier) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(t.icon, null, tint = t.tone.dark, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(t.label, fontSize = 12.sp, lineHeight = 14.sp, maxLines = 2)
+                Text(t.value.ifBlank { "—" }, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 2)
             }
         }
     }
 }
 
-/** Welcome card floating in the middle of the screen; closes after 5 seconds or with the X. */
 @Composable
-fun WelcomePopup(user: User, onClose: () -> Unit) {
-    LaunchedEffect(Unit) {
-        delay(5000)
-        onClose()
+private fun KeyRow(icon: ImageVector, label: String, value: String, last: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = Brand, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, Modifier.weight(1f), fontSize = 16.sp)
+        Text(value, fontSize = 19.sp, fontWeight = FontWeight.Black)
     }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-            WelcomeCard(user, Modifier.padding(top = 14.dp, end = 10.dp))
-            Box(
-                Modifier.align(Alignment.TopEnd).size(36.dp).shadow(4.dp, CircleShape)
-                    .background(Color.White, CircleShape).clip(CircleShape).clickable(onClick = onClose),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Close, "Close", tint = BrandDark, modifier = Modifier.size(22.dp))
+    if (!last) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+}
+
+@Composable
+private fun BlockCard(mb: MainBlock, tone: Tone, onClick: () -> Unit) {
+    WaveCard(tone, Modifier.fillMaxWidth().padding(bottom = 10.dp), onClick) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            LetterTile(mb.name.ifBlank { "?" }.take(2), tone, 52.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Main Block ${mb.name.ifBlank { "(none)" }}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                MiniLine(Icons.Filled.Groups, "${fmt(mb.count)} people")
+                MiniLine(Icons.Filled.FamilyRestroom, "${fmt(mb.families)} families")
+                MiniLine(Icons.Filled.Layers, "${mb.subs.size} sub-blocks")
+            }
+            Icon(Icons.Filled.Terrain, null, tint = tone.light.copy(alpha = 0.7f), modifier = Modifier.size(44.dp))
+        }
+    }
+}
+
+@Composable
+private fun MiniLine(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = Color(0xFF3A4743), modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, fontSize = 14.sp, color = Color(0xFF26322E))
+    }
+}
+
+@Composable
+private fun QuickBtn(icon: ImageVector, label: String, tone: Tone, modifier: Modifier, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp), color = tone.light.copy(alpha = 0.22f),
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),
+    ) {
+        Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, tint = tone.dark, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(label, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1)
+        }
+    }
+}
+
+// ---------------- shared pieces (also used by Camp Profile) ----------------
+
+@Composable
+fun Panel(
+    title: String, icon: ImageVector, modifier: Modifier = Modifier, iconTint: Color = Brand, titleColor: Color = Color(0xFF12302A),
+    action: (@Composable () -> Unit)? = null, content: @Composable () -> Unit,
+) {
+    Surface(shape = RoundedCornerShape(20.dp), color = Color.White, shadowElevation = 2.dp, modifier = modifier.fillMaxWidth()) {
+        Column {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = iconTint, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(title, Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Bold, color = titleColor)
+                if (action != null) action()
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            Column(Modifier.padding(14.dp)) { content() }
+        }
+    }
+}
+
+@Composable
+fun EditChip(onClick: () -> Unit) {
+    Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFFEEF5F2), modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick)) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Edit, null, tint = BrandDark, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Edit", fontWeight = FontWeight.Bold, color = BrandDark, fontSize = 13.sp)
+        }
+    }
+}
+
+fun dial(ctx: android.content.Context, phone: String) {
+    val n = phone.filter { it.isDigit() || it == '+' }
+    if (n.isEmpty()) return
+    try { ctx.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$n"))) } catch (_: Exception) { }
+}
+
+@Composable
+fun CallButton(phone: String) {
+    val ctx = LocalContext.current
+    Box(
+        Modifier.size(46.dp).shadow(4.dp, CircleShape).background(Brush.linearGradient(listOf(Color(0xFF3DDC6F), Color(0xFF16A34A))), CircleShape)
+            .clip(CircleShape).clickable { dial(ctx, phone) },
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.Filled.Phone, "Call", tint = Color.White, modifier = Modifier.size(24.dp)) }
+}
+
+private class ContactStyle(val icon: ImageVector, val fg: Color, val bg: Color)
+
+@Composable
+fun ContactList(contacts: List<DataRow>) {
+    if (contacts.isEmpty()) { Text("No contacts yet.", color = MaterialTheme.colorScheme.onSurfaceVariant); return }
+    contacts.forEach { c ->
+        val cs = when (c["type"]) {
+            "fire" -> ContactStyle(Icons.Filled.FireTruck, Color(0xFFD32F2F), Color(0xFFFDECEA))
+            "police" -> ContactStyle(Icons.Filled.LocalPolice, Color(0xFF1E3A8A), Color(0xFFE8EEFC))
+            "hospital" -> ContactStyle(Icons.Filled.LocalHospital, Color(0xFF1565C0), Color(0xFFE6F3FB))
+            "site" -> ContactStyle(Icons.Filled.Engineering, Color(0xFFEF6C00), Color(0xFFFFF2DE))
+            else -> ContactStyle(Icons.Filled.Phone, Brand, Color(0xFFEEF5F2))
+        }
+        Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 1.dp, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).background(cs.bg, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) { Icon(cs.icon, null, tint = cs.fg, modifier = Modifier.size(30.dp)) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(c["name"].orEmpty(), fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(c["phone"].orEmpty(), fontSize = 15.sp)
+                }
+                if (!c["phone"].isNullOrBlank()) CallButton(c["phone"].orEmpty())
             }
         }
     }
+}
+
+@Composable
+private fun NotificationsDialog(app: AppCtl, onClose: () -> Unit) {
+    var items by remember { mutableStateOf<List<Notice>?>(null) }
+    LaunchedEffect(Unit) {
+        val out = mutableListOf<Notice>()
+        try {
+            if (app.isAdmin) {
+                Api.call("users").optJSONArray("users").mapObjects { User.from(it) }.filter { it.status == "pending" }
+                    .forEach { out += Notice("${it.name} wants to join", "${it.email} · waiting for approval", true) }
+                Api.call("msg_all", jo("status" to "open")).optJSONArray("messages").mapObjects { Message.from(it) }
+                    .forEach { out += Notice(it.subject.ifBlank { "Request" }, "${it.userName} · ${it.createdAt}", false) }
+            } else {
+                Api.call("msg_mine").optJSONArray("messages").mapObjects { Message.from(it) }.filter { !it.userSeen && it.reply.isNotBlank() }
+                    .forEach { out += Notice("Admin replied: ${it.subject.ifBlank { "Request" }}", it.reply.take(80), false) }
+                app.refreshStats()
+            }
+        } catch (_: Exception) { }
+        items = out
+    }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Notifications") },
+        text = {
+            val l = items
+            when {
+                l == null -> Text("Loading…")
+                l.isEmpty() -> Text("No new notifications.")
+                else -> LazyColumn(Modifier.height(360.dp)) {
+                    items(l) { n ->
+                        Column(
+                            Modifier.fillMaxWidth().clickable {
+                                onClose()
+                                if (n.toUsers) { app.tab(Screen.More); app.push(Screen.Site); app.push(Screen.Users) } else app.tab(Screen.Messages)
+                            }.padding(vertical = 10.dp),
+                        ) {
+                            Text(n.title, fontWeight = FontWeight.Bold)
+                            Text(n.sub, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+    )
 }

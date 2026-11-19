@@ -241,10 +241,11 @@ fun PersonCard(sl: Int, p: Person, onClick: () -> Unit) {
 
 // ---------------- export ----------------
 
-private class ExportResult(val file: File, val mime: String)
+class ExportResult(val file: File, val mime: String)
 
+/** total < 0 means "not known yet". */
 @Composable
-private fun ExportDialog(app: AppCtl, filters: Filters, total: Int, onClose: () -> Unit) {
+fun ExportDialog(app: AppCtl, filters: Filters, total: Int, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -262,14 +263,15 @@ private fun ExportDialog(app: AppCtl, filters: Filters, total: Int, onClose: () 
         busy = true; error = null
         scope.launch {
             try {
-                val all = ArrayList<Person>(total)
+                val all = ArrayList<Person>(maxOf(total, 16))
                 while (true) {
-                    progress = "Downloading records… ${fmt(all.size)} / ${fmt(total)}"
+                    progress = if (total >= 0) "Downloading records… ${fmt(all.size)} / ${fmt(total)}" else "Downloading records… ${fmt(all.size)}"
                     val r = Api.call("list", filters.toJson().put("per", 2000).put("offset", all.size))
                     val rows = r.optJSONArray("rows").mapObjects { Person.from(it) }
                     all.addAll(rows)
                     if (rows.isEmpty() || all.size >= r.optInt("total")) break
                 }
+                if (all.isEmpty()) { error = "No records match this choice."; return@launch }
                 progress = if (pdf) "Creating PDF… (${fmt(all.size)} records)" else "Creating Excel file… (${fmt(all.size)} records)"
                 result = withContext(Dispatchers.Default) { makeFile(ctx, all, filters, pdf) }
             } catch (e: Exception) {
@@ -303,12 +305,12 @@ private fun ExportDialog(app: AppCtl, filters: Filters, total: Int, onClose: () 
                         }
                     }
                     else -> {
-                        Text("${fmt(total)} records · ${filters.describe()}")
+                        Text(if (total >= 0) "${fmt(total)} records · ${filters.describe()}" else filters.describe())
                         if (error != null) Text(error ?: "", color = MaterialTheme.colorScheme.error)
                         if (total > 10000) Text("This is a large list. The PDF may take a minute.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { run(false) }) { Text("Excel (.xlsx)") }
                             OutlinedButton(onClick = { run(true) }) { Text("PDF") }
+                            OutlinedButton(onClick = { run(false) }) { Text("Excel (.xlsx)") }
                         }
                     }
                 }

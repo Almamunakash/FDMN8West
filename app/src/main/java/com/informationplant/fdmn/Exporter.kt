@@ -186,6 +186,107 @@ object Exporter {
         }
     }
 
+    // ---------------- generic tables (reports) ----------------
+
+    fun writeTableXlsx(file: File, headers: List<String>, rows: List<List<Any>>, widths: List<Int>) {
+        ZipOutputStream(FileOutputStream(file)).use { zip ->
+            fun put(name: String, text: String) { zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray(Charsets.UTF_8)); zip.closeEntry() }
+            put("[Content_Types].xml", CT); put("_rels/.rels", RELS); put("xl/workbook.xml", WB); put("xl/_rels/workbook.xml.rels", WBRELS); put("xl/styles.xml", STYLES)
+            val sb = StringBuilder()
+            sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>""")
+            widths.forEachIndexed { i, w -> sb.append("<col min=\"${i + 1}\" max=\"${i + 1}\" width=\"$w\" customWidth=\"1\"/>") }
+            sb.append("</cols><sheetData><row r=\"1\">")
+            headers.forEachIndexed { c, h -> sb.append("<c r=\"${col(c)}1\" t=\"inlineStr\" s=\"1\"><is><t>${esc(h)}</t></is></c>") }
+            sb.append("</row>")
+            rows.forEachIndexed { i, row ->
+                val r = i + 2
+                sb.append("<row r=\"$r\">")
+                row.forEachIndexed { c, v ->
+                    val ref = "${col(c)}$r"
+                    if (v is Number) sb.append("<c r=\"$ref\" s=\"2\"><v>$v</v></c>")
+                    else sb.append("<c r=\"$ref\" t=\"inlineStr\" s=\"2\"><is><t xml:space=\"preserve\">${esc(v.toString())}</t></is></c>")
+                }
+                sb.append("</row>")
+            }
+            sb.append("</sheetData></worksheet>")
+            put("xl/worksheets/sheet1.xml", sb.toString())
+        }
+    }
+
+    /** styles: "" normal, "sub" sub-total row, "grand" grand total row. right: right-align column. */
+    fun writeTablePdf(ctx: Context, file: File, title: String, subtitle: String, headers: List<String>, widthsIn: List<Float>, right: List<Boolean>, rows: List<List<String>>, styles: List<String>) {
+        val pageW = 842; val pageH = 595; val margin = 28f; val rowH = 16f; val titleH = 66f; val footerH = 20f
+        val total = widthsIn.sum()
+        val widths = widthsIn.map { it * (pageW - margin * 2) / total }
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 8.5f; color = Color.rgb(23, 32, 29) }
+        val bold = Paint(text).apply { typeface = Typeface.DEFAULT_BOLD }
+        val white = Paint(bold).apply { color = Color.WHITE }
+        val titleP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 15f; typeface = Typeface.DEFAULT_BOLD; color = Color.rgb(11, 93, 75) }
+        val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 9f; color = Color.rgb(71, 85, 79) }
+        val head = Paint().apply { color = Color.rgb(205, 235, 225) }
+        val subFill = Paint().apply { color = Color.rgb(227, 242, 236) }
+        val grandFill = Paint().apply { color = Color.rgb(11, 93, 75) }
+        val line = Paint().apply { color = Color.rgb(201, 214, 209); strokeWidth = 0.6f }
+        fun fit(s: String, w: Float, p: Paint): String {
+            if (p.measureText(s) <= w) return s
+            var end = s.length
+            while (end > 0 && p.measureText(s.substring(0, end) + "…") > w) end--
+            return s.substring(0, end) + "…"
+        }
+        val logo = try { BitmapFactory.decodeResource(ctx.resources, R.drawable.logo_full) } catch (e: Exception) { null }
+        val doc = PdfDocument()
+        try {
+            val firstRows = ((pageH - margin * 2 - titleH - footerH - rowH) / rowH).toInt()
+            val otherRows = ((pageH - margin * 2 - footerH - rowH) / rowH).toInt()
+            val pages = if (rows.size <= firstRows) 1 else 1 + Math.ceil((rows.size - firstRows) / otherRows.toDouble()).toInt()
+            val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.ENGLISH))
+            var idx = 0
+            for (pn in 1..pages) {
+                val page = doc.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, pn).create())
+                val c = page.canvas
+                var y = margin
+                if (pn == 1) {
+                    var tx = margin
+                    if (logo != null) { val lh = 52f; val lw = lh * logo.width / logo.height; c.drawBitmap(logo, null, RectF(margin, y, margin + lw, y + lh), Paint(Paint.FILTER_BITMAP_FLAG)); tx = margin + lw + 16f }
+                    c.drawText(title, tx, y + 20f, titleP); c.drawText(subtitle, tx, y + 36f, small); c.drawText("Created $stamp", tx, y + 50f, small)
+                    y += titleH
+                }
+                c.drawRect(margin, y, pageW - margin, y + rowH, head)
+                var x = margin
+                headers.forEachIndexed { i, h -> val t = fit(h, widths[i] - 6f, bold); c.drawText(t, if (right[i]) x + widths[i] - 3f - bold.measureText(t) else x + 3f, y + 11.5f, bold); x += widths[i] }
+                y += rowH
+                val count = if (pn == 1) firstRows else otherRows
+                var n = 0
+                while (n < count && idx < rows.size) {
+                    val st = styles.getOrElse(idx) { "" }
+                    when (st) { "sub" -> c.drawRect(margin, y, pageW - margin, y + rowH, subFill); "grand" -> c.drawRect(margin, y, pageW - margin, y + rowH, grandFill) }
+                    val p = when (st) { "grand" -> white; "sub" -> bold; else -> text }
+                    x = margin
+                    rows[idx].forEachIndexed { i, v -> val t = fit(v, widths[i] - 6f, p); c.drawText(t, if (right[i]) x + widths[i] - 3f - p.measureText(t) else x + 3f, y + 11.5f, p); x += widths[i] }
+                    y += rowH
+                    c.drawLine(margin, y, pageW - margin, y, line)
+                    idx++; n++
+                }
+                c.drawText("Page $pn of $pages", pageW - margin - 70f, pageH - margin + 4f, small)
+                c.drawText("Camp- 8 West · Confidential — for official use only", margin, pageH - margin + 4f, small)
+                doc.finishPage(page)
+            }
+            FileOutputStream(file).use { doc.writeTo(it) }
+        } finally { doc.close() }
+    }
+
+    private const val CT = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>"""
+    private const val RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"""
+    private const val WB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>"""
+    private const val WBRELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"""
+    private const val STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFCDEBE1"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"""
+
     // ---------------- share / save ----------------
 
     fun uriFor(ctx: Context, file: File): Uri =

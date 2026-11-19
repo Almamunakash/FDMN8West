@@ -11,8 +11,8 @@ android {
         applicationId = "com.informationplant.fdmn"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2"
+        versionCode = 5
+        versionName = "2.0"
     }
 
     // Fixed test key, so new versions install over old ones without uninstalling.

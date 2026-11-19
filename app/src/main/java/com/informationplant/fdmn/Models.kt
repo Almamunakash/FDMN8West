@@ -16,7 +16,9 @@ data class User(
     val createdAt: String,
     val lastLogin: String,
 ) {
-    val isAdmin get() = role == "admin"
+    val isAdmin get() = role == "admin" || role == "master"
+    val isMaster get() = role == "master"
+    val roleName get() = when (role) { "master" -> "Master Admin"; "admin" -> "Admin"; else -> "User" }
 
     fun toJson(): JSONObject = jo(
         "id" to id, "name" to name, "email" to email, "role" to role, "status" to status,
@@ -73,12 +75,14 @@ data class Stats(
     val total: Int = 0, val families: Int = 0, val male: Int = 0, val female: Int = 0,
     val pendingUsers: Int = 0, val openMessages: Int = 0, val unreadReplies: Int = 0,
     val under5: Int = 0, val age6to12: Int = 0, val age13to17: Int = 0, val elderly: Int = 0,
+    val mainBlocks: Int = 0, val subBlocks: Int = 0,
 ) {
     companion object {
         fun from(o: JSONObject) = Stats(
             o.optInt("total"), o.optInt("families"), o.optInt("male"), o.optInt("female"),
             o.optInt("pending_users"), o.optInt("open_messages"), o.optInt("unread_replies"),
             o.optInt("under5"), o.optInt("age6to12"), o.optInt("age13to17"), o.optInt("elderly"),
+            o.optInt("main_blocks"), o.optInt("sub_blocks"),
         )
     }
 }
@@ -118,11 +122,12 @@ data class Filters(
     val relation: String = "",
     val majhi: String = "",
     val age: String = "",
+    val fcn: String = "",
 ) {
-    val active get() = q.isNotBlank() || main.isNotBlank() || sub.isNotBlank() || sex.isNotBlank() || relation.isNotBlank() || majhi.isNotBlank() || age.isNotBlank()
+    val active get() = q.isNotBlank() || main.isNotBlank() || sub.isNotBlank() || sex.isNotBlank() || relation.isNotBlank() || majhi.isNotBlank() || age.isNotBlank() || fcn.isNotBlank()
 
     fun toJson(): JSONObject = jo(
-        "q" to q, "main" to main, "sub" to sub, "sex" to sex, "relation" to relation, "majhi" to majhi, "age" to age,
+        "q" to q, "main" to main, "sub" to sub, "sex" to sex, "relation" to relation, "majhi" to majhi, "age" to age, "fcn" to fcn,
     )
 
     fun describe(): String {
@@ -133,6 +138,7 @@ data class Filters(
         if (relation.isNotBlank()) parts += "Relation $relation"
         if (age.isNotBlank()) parts += (if (age == "e60") "Elderly " else "Children ") + ageLabel(age)
         if (majhi.isNotBlank()) parts += "Majhi $majhi"
+        if (fcn.isNotBlank()) parts += "Family FCN $fcn"
         if (q.isNotBlank()) parts += "Search \"$q\""
         return if (parts.isEmpty()) "All records" else parts.joinToString(" · ")
     }
@@ -198,4 +204,54 @@ object DateUtil {
         val d = LocalDate.of(1899, 12, 30).plusDays(serial.toLong())
         return if (okYear(d)) d.toString() else null
     }
+}
+
+
+// ---------------- Camp Profile data (saved on the server, edited by Admins) ----------------
+
+/** One editable row: a map of field name -> text. */
+typealias DataRow = Map<String, String>
+
+data class CampData(
+    val area: String = "", val projects: String = "", val sectors: String = "",
+    val extra: List<DataRow> = emptyList(),
+    val office: List<DataRow> = emptyList(),
+    val orgs: List<DataRow> = emptyList(), val orgsUpdated: String = "",
+    val services: List<DataRow> = emptyList(), val servicesUpdated: String = "",
+    val contacts: List<DataRow> = emptyList(),
+    val mapUrl: String = "",
+) {
+    companion object {
+        private fun rows(a: org.json.JSONArray?, fields: List<String>): List<DataRow> =
+            a.mapObjects { o -> fields.associateWith { o.str(it) } }
+
+        fun from(s: JSONObject): CampData {
+            val ci = s.optJSONObject("camp_info2") ?: JSONObject()
+            val orgs = s.optJSONObject("orgs") ?: JSONObject()
+            val svc = s.optJSONObject("services") ?: JSONObject()
+            return CampData(
+                area = ci.str("area"), projects = ci.str("projects"), sectors = ci.str("sectors"),
+                extra = rows(ci.optJSONArray("extra"), listOf("label", "value")),
+                office = rows(s.optJSONArray("office"), listOf("designation", "name", "phone")),
+                orgs = rows(orgs.optJSONArray("items"), listOf("name", "work")), orgsUpdated = orgs.str("updated"),
+                services = rows(svc.optJSONArray("items"), listOf("name", "count")), servicesUpdated = svc.str("updated"),
+                contacts = rows(s.optJSONArray("contacts"), listOf("type", "name", "phone")),
+                mapUrl = s.optJSONObject("map")?.str("url") ?: "",
+            )
+        }
+    }
+}
+
+fun rowsJson(rows: List<DataRow>): org.json.JSONArray {
+    val a = org.json.JSONArray()
+    rows.forEach { r -> val o = JSONObject(); r.forEach { (k, v) -> o.put(k, v) }; a.put(o) }
+    return a
+}
+
+fun updatedText(d: String): String {
+    if (d.length < 16) return "Not updated yet"
+    return try {
+        val t = java.time.LocalDateTime.parse(d.replace(' ', 'T'))
+        t.format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.ENGLISH))
+    } catch (e: Exception) { d }
 }

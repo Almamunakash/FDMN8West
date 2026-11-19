@@ -40,9 +40,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +89,10 @@ sealed class Screen {
     object Import : Screen()
     object ChangePassword : Screen()
     object CampProfile : Screen()
+    object Reports : Screen()
+    object Site : Screen()
+    data class CampItem(val key: String, val edit: Boolean) : Screen()
+    object Contacts : Screen()
 }
 
 /** Keeps the record list, its filters and scroll position while moving between screens. */
@@ -148,8 +153,7 @@ class AppCtl(val scope: CoroutineScope, val snackbar: SnackbarHostState) {
     var version by mutableIntStateOf(0)
     var meta by mutableStateOf(Meta())
     var stats by mutableStateOf(Stats())
-    /** Floating welcome card: shown every time the app opens and after signing in. */
-    var showWelcome by mutableStateOf(true)
+    var camp by mutableStateOf(CampData())
     val records = RecordsState()
 
     val current: Screen get() = stack.last()
@@ -204,9 +208,15 @@ class AppCtl(val scope: CoroutineScope, val snackbar: SnackbarHostState) {
         records.items.clear()
         records.loadedKey = null
         tab(Screen.Home)
-        showWelcome = true
         refreshMeta()
         refreshStats()
+        refreshCamp()
+    }
+
+    fun refreshCamp() {
+        scope.launch {
+            try { camp = CampData.from(Api.call("settings_get").getJSONObject("settings")) } catch (_: Exception) { }
+        }
     }
 
     fun signOut(callServer: Boolean = true) {
@@ -242,6 +252,7 @@ fun FdmnApp() {
             if (app.user != null) {
                 app.refreshMeta()
                 app.refreshStats()
+                app.refreshCamp()
             }
         }
         delay(1500)
@@ -288,12 +299,13 @@ fun FdmnApp() {
                 shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
             ) {
                 Row(
-                    Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 6.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     val msgCount = if (app.isAdmin) app.stats.openMessages else app.stats.unreadReplies
-                    NavPill(root == Screen.Home, Icons.Filled.Home, "Home", 0, Modifier.weight(1f)) { app.tab(Screen.Home) }
-                    NavPill(root == Screen.Records, Icons.AutoMirrored.Filled.List, "Records", 0, Modifier.weight(1f)) { app.tab(Screen.Records) }
+                    NavPill(root == Screen.Home, Icons.Filled.Dashboard, "Dashboard", 0, Modifier.weight(1f)) { app.tab(Screen.Home) }
+                    NavPill(root == Screen.Records, Icons.Filled.Storage, "Records", 0, Modifier.weight(1f)) { app.tab(Screen.Records) }
+                    NavPill(root == Screen.Reports, Icons.Filled.BarChart, "Reports", 0, Modifier.weight(1f)) { app.tab(Screen.Reports) }
                     NavPill(root == Screen.Messages, Icons.Outlined.Email, "Messages", msgCount, Modifier.weight(1f)) { app.tab(Screen.Messages) }
                     NavPill(root == Screen.More, Icons.Filled.Menu, "More", if (app.isAdmin) app.stats.pendingUsers else 0, Modifier.weight(1f)) { app.tab(Screen.More) }
                 }
@@ -313,10 +325,13 @@ fun FdmnApp() {
                 Screen.Import -> ImportScreen(app)
                 Screen.ChangePassword -> ChangePasswordScreen(app)
                 Screen.CampProfile -> CampProfileScreen(app)
+                Screen.Reports -> ReportsScreen(app)
+                Screen.Site -> SiteUpdateScreen(app)
+                is Screen.CampItem -> CampItemScreen(app, s.key, s.edit)
+                Screen.Contacts -> ContactsEditScreen(app)
             }
         }
     }
-    if (app.showWelcome) WelcomePopup(user) { app.showWelcome = false }
 }
 
 @Composable
@@ -333,7 +348,7 @@ private fun NavPill(selected: Boolean, icon: ImageVector, label: String, badge: 
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box {
-                Icon(icon, label, tint = if (selected) Color.White else BrandDark, modifier = Modifier.size(28.dp))
+                Icon(icon, label, tint = if (selected) Color.White else BrandDark, modifier = Modifier.size(26.dp))
                 if (badge > 0) {
                     Box(
                         Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-4).dp)
@@ -343,7 +358,7 @@ private fun NavPill(selected: Boolean, icon: ImageVector, label: String, badge: 
                 }
             }
             Text(
-                label, fontSize = 13.sp, maxLines = 1,
+                label, fontSize = 11.sp, maxLines = 1,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
                 color = if (selected) Color.White else BrandDark,
             )
@@ -360,7 +375,8 @@ private fun SplashScreen() {
                 modifier = Modifier.fillMaxWidth(0.92f),
             )
             Spacer(Modifier.height(28.dp))
-            Text("8 West FDMN Database", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Brand)
+            Text("Camp- 8 West", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Brand)
+            Text("Information Management System", fontSize = 15.sp, color = Color(0xFF5B6B65))
             Spacer(Modifier.height(18.dp))
             CircularProgressIndicator(color = Brand, strokeWidth = 3.dp, modifier = Modifier.size(28.dp))
         }
